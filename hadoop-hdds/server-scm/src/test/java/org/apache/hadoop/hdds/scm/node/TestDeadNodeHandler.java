@@ -30,6 +30,8 @@ import org.apache.hadoop.hdds.HddsConfigKeys;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
+import org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationFactor;
+import org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationType;
 import org.apache.hadoop.hdds.protocol.proto
     .StorageContainerDatanodeProtocolProtos.ContainerReplicaProto;
 import org.apache.hadoop.hdds.protocol.proto
@@ -43,7 +45,10 @@ import org.apache.hadoop.hdds.scm.container.ContainerManager;
 import org.apache.hadoop.hdds.scm.container.ContainerNotFoundException;
 import org.apache.hadoop.hdds.scm.container.ContainerReplica;
 import org.apache.hadoop.hdds.scm.container.ContainerInfo;
+import org.apache.hadoop.hdds.scm.container.SCMContainerManager;
 import org.apache.hadoop.hdds.scm.events.SCMEvents;
+import org.apache.hadoop.hdds.scm.net.NetworkTopology;
+import org.apache.hadoop.hdds.scm.net.NetworkTopologyImpl;
 import org.apache.hadoop.hdds.scm.node.states.NodeNotFoundException;
 import org.apache.hadoop.hdds.scm.pipeline.PipelineManager;
 import org.apache.hadoop.hdds.scm.pipeline.PipelineProvider;
@@ -51,6 +56,7 @@ import org.apache.hadoop.hdds.scm.pipeline.SCMPipelineManager;
 import org.apache.hadoop.hdds.scm.pipeline.MockRatisPipelineProvider;
 import org.apache.hadoop.hdds.scm.server.SCMDatanodeHeartbeatDispatcher
     .NodeReportFromDatanode;
+import org.apache.hadoop.hdds.scm.server.SCMStorageConfig;
 import org.apache.hadoop.hdds.scm.server.StorageContainerManager;
 import org.apache.hadoop.hdds.server.events.EventPublisher;
 
@@ -58,22 +64,23 @@ import org.apache.hadoop.hdds.server.events.EventQueue;
 import org.apache.hadoop.security.authentication.client
     .AuthenticationException;
 import org.apache.hadoop.test.GenericTestUtils;
+
+import org.apache.commons.io.IOUtils;
 import org.junit.After;
 import org.junit.Assert;
 import org.junit.Before;
 import org.junit.Ignore;
 import org.junit.Test;
 import org.mockito.Mockito;
+import org.slf4j.LoggerFactory;
 
 /**
  * Test DeadNodeHandler.
  */
 public class TestDeadNodeHandler {
 
-  private StorageContainerManager scm;
   private SCMNodeManager nodeManager;
   private ContainerManager containerManager;
-  private NodeReportHandler nodeReportHandler;
   private SCMPipelineManager pipelineManager;
   private DeadNodeHandler deadNodeHandler;
   private EventPublisher publisher;
@@ -87,32 +94,40 @@ public class TestDeadNodeHandler {
         TestDeadNodeHandler.class.getSimpleName() + UUID.randomUUID());
     conf.set(HddsConfigKeys.OZONE_METADATA_DIRS, storageDir);
     eventQueue = new EventQueue();
-    scm = HddsTestUtils.getScm(conf);
-    nodeManager = (SCMNodeManager) scm.getScmNodeManager();
-    pipelineManager =
-        (SCMPipelineManager)scm.getPipelineManager();
+
+    NetworkTopology topology = Mockito.mock(NetworkTopology.class);
+    SCMStorageConfig storageConfig = Mockito.mock(SCMStorageConfig.class);
+    Mockito.when(storageConfig.getScmId()).thenReturn("SCM-ID");
+    Mockito.when(storageConfig.getClusterID()).thenReturn("CLUSTER_ID");
+
+    nodeManager = new SCMNodeManager(conf, storageConfig, eventQueue, topology);
+
+    pipelineManager = new SCMPipelineManager(conf, nodeManager, eventQueue);
+
     PipelineProvider mockRatisProvider =
         new MockRatisPipelineProvider(nodeManager,
             pipelineManager.getStateManager(), conf);
+
     pipelineManager.setPipelineProvider(HddsProtos.ReplicationType.RATIS,
         mockRatisProvider);
-    containerManager = scm.getContainerManager();
+
+    containerManager =
+        new SCMContainerManager(conf, nodeManager, pipelineManager, eventQueue);
+
     deadNodeHandler = new DeadNodeHandler(nodeManager,
         Mockito.mock(PipelineManager.class), containerManager);
     eventQueue.addHandler(SCMEvents.DEAD_NODE, deadNodeHandler);
     publisher = Mockito.mock(EventPublisher.class);
-    nodeReportHandler = new NodeReportHandler(nodeManager);
   }
 
   @After
-  public void teardown() {
-    scm.stop();
-    scm.join();
-    FileUtil.fullyDelete(new File(storageDir));
+  public void teardown() throws IOException {
+      FileUtil.fullyDelete(new File(storageDir));
+    pipelineManager.close();
+    nodeManager.close();
   }
 
   @Test
-  @Ignore("Tracked by HDDS-2508.")
   public void testOnMessage() throws IOException, NodeNotFoundException {
     //GIVEN
     DatanodeDetails datanode1 = TestUtils.randomDatanodeDetails();
@@ -136,12 +151,7 @@ public class TestDeadNodeHandler {
     nodeManager.register(datanode3,
         TestUtils.createNodeReport(storageOne), null);
 
-    nodeManager.register(TestUtils.randomDatanodeDetails(),
-        TestUtils.createNodeReport(storageOne), null);
-    nodeManager.register(TestUtils.randomDatanodeDetails(),
-        TestUtils.createNodeReport(storageOne), null);
-    nodeManager.register(TestUtils.randomDatanodeDetails(),
-        TestUtils.createNodeReport(storageOne), null);
+    pipelineManager.createPipeline(ReplicationType.RATIS, ReplicationFactor.THREE);
 
     nodeManager.register(TestUtils.randomDatanodeDetails(),
         TestUtils.createNodeReport(storageOne), null);
@@ -149,6 +159,18 @@ public class TestDeadNodeHandler {
         TestUtils.createNodeReport(storageOne), null);
     nodeManager.register(TestUtils.randomDatanodeDetails(),
         TestUtils.createNodeReport(storageOne), null);
+
+    pipelineManager.createPipeline(ReplicationType.RATIS, ReplicationFactor.THREE);
+
+    nodeManager.register(TestUtils.randomDatanodeDetails(),
+        TestUtils.createNodeReport(storageOne), null);
+    nodeManager.register(TestUtils.randomDatanodeDetails(),
+        TestUtils.createNodeReport(storageOne), null);
+    nodeManager.register(TestUtils.randomDatanodeDetails(),
+        TestUtils.createNodeReport(storageOne), null);
+
+    pipelineManager.createPipeline(ReplicationType.RATIS, ReplicationFactor.THREE);
+
 
     TestUtils.openAllRatisPipelines(pipelineManager);
 
