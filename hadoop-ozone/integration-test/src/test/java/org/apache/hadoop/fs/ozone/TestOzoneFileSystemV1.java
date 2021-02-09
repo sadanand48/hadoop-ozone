@@ -385,18 +385,15 @@ public class TestOzoneFileSystemV1 extends TestOzoneFileSystem {
   @Override
   @Test
   @Ignore("TODO:HDDS-2939")
-  public void testTrash() throws Exception {
-  }
-
-  @Override
-  @Test
-  @Ignore("TODO:HDDS-2939")
-  public void testRenameToTrashEnabled() throws Exception {
-  }
-
-  @Override
-  @Test
-  @Ignore("TODO:HDDS-2939")
   public void testListStatusWithIntermediateDir() throws Exception {
+  }
+
+  /**
+   * 1.Move a Key to Trash
+   * 2.Verify that the key gets deleted by the trash emptier.
+   */
+  @Override
+  public void testTrash() throws Exception {
+    super.testTrash();
   }
 }
