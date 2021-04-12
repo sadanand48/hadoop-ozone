@@ -1,0 +1,104 @@
+# Licensed to the Apache Software Foundation (ASF) under one or more
+# contributor license agreements.  See the NOTICE file distributed with
+# this work for additional information regarding copyright ownership.
+# The ASF licenses this file to You under the Apache License, Version 2.0
+# (the "License"); you may not use this file except in compliance with
+# the License.  You may obtain a copy of the License at
+#
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+name: build-branch
+on:
+  push:
+jobs:
+  compile:
+    runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        java: [ 8 ]
+      fail-fast: false
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v2
+      - name: Cache for npm dependencies
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.pnpm-store
+            **/node_modules
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+      - name: Cache for maven dependencies
+        uses: actions/cache@v2
+        with:
+          path: ~/.m2/repository
+          key: maven-repo-${{ hashFiles('**/pom.xml') }}
+          restore-keys: maven-repo-
+      - name: Setup java
+        uses: actions/setup-java@v1
+        with:
+          java-version: ${{ matrix.java }}
+      - name: Run a full build
+        run: hadoop-ozone/dev-support/checks/build.sh -Pcoverage -Pdist
+      - name: Store binaries for tests
+        uses: actions/upload-artifact@v2
+        if: matrix.java == '8'
+        with:
+          name: ozone-bin
+          path: hadoop-ozone/dist/target/hadoop-ozone*.tar.gz
+          retention-days: 1
+  acceptance:
+    needs: compile
+    runs-on: ubuntu-18.04
+    strategy:
+      matrix:
+        suite:
+          - unsecure
+      fail-fast: false
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v2
+        with:
+          path: ozone
+      - name: Move Ozone to /mnt
+        run: |
+          sudo chmod 777 /mnt
+          mv ozone /mnt/
+      - name: Download compiled Ozone binaries
+        uses: actions/download-artifact@v2
+        with:
+          name: ozone-bin
+      - name: Untar binaries
+        run: |
+          mkdir -p /mnt/ozone/hadoop-ozone/dist/target
+          tar xzvf hadoop-ozone*.tar.gz -C /mnt/ozone/hadoop-ozone/dist/target
+      - name: Install robotframework
+        run: sudo pip install robotframework
+      - name: Execute tests
+        run: |
+          cd /mnt/ozone/hadoop-ozone/dist/target/ozone-* && sudo mkdir .aws && sudo chmod 777 .aws && sudo chown 1000 .aws
+          cd /mnt/ozone && hadoop-ozone/dev-support/checks/acceptance.sh
+        env:
+          KEEP_IMAGE: false
+          OZONE_ACCEPTANCE_SUITE: ${{ matrix.suite }}
+          OZONE_WITH_COVERAGE: true
+          OZONE_VOLUME_OWNER: 1000
+      - name: Archive build results
+        uses: actions/upload-artifact@v2
+        if: always()
+        with:
+          name: acceptance-${{ matrix.suite }}
+          path: /mnt/ozone/target/acceptance
+        continue-on-error: true
+      - name: Delete temporary build artifacts before caching
+        run: |
+          #Never cache local artifacts
+          rm -rf ~/.m2/repository/org/apache/hadoop/hdds
+          rm -rf ~/.m2/repository/org/apache/hadoop/ozone
+        if: always()

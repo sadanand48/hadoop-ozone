@@ -26,29 +26,16 @@ export OZONE_REPLICATION_FACTOR=3
 # shellcheck source=/dev/null
 source "$COMPOSE_DIR/../testlib.sh"
 
+# running FS tests with different config requires restart of the cluster
+export OZONE_OM_METADATA_LAYOUT=PREFIX
+export OZONE_OM_ENABLE_FILESYSTEM_PATHS=true
+
 start_docker_env
-
-execute_robot_test scm lib
-execute_robot_test scm ozone-lib
-
-execute_robot_test scm basic
-
-execute_robot_test scm gdpr
-
-execute_robot_test scm security/ozone-secure-token.robot
-
-for bucket in link generated; do
-  execute_robot_test scm -v BUCKET:${bucket} -N s3-${bucket} s3
+for scheme in ofs o3fs; do
+  for bucket in link bucket; do
+    execute_robot_test scm -v SCHEME:${scheme} -v BUCKET_TYPE:${bucket} -N ozonefs-${OZONE_OM_METADATA_LAYOUT}-${scheme}-${bucket} ozonefs/ozonefs.robot
+  done
 done
-
-execute_robot_test scm recon
-
-execute_robot_test scm om-ratis
-
-execute_robot_test scm freon
-
-execute_robot_test scm cli
-
 stop_docker_env
 
 generate_report
