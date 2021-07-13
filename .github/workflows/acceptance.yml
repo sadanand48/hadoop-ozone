@@ -22,8 +22,56 @@ on:
 env:
   FAIL_FAST: ${{ github.event_name == 'pull_request' }}
   MAVEN_OPTS: -Dhttp.keepAlive=false -Dmaven.wagon.http.pool=false -Dmaven.wagon.http.retryHandler.class=standard -Dmaven.wagon.http.retryHandler.count=3
-jobs:   
-  acceptance:
+jobs:
+  compile:
+    runs-on: ubuntu-18.04
+    timeout-minutes: 30
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    strategy:
+      matrix:
+        java: [ 8, 11 ]
+      fail-fast: ${{ github.event_name == 'pull_request' }}
+    steps:
+      - name: Checkout project
+        uses: actions/checkout@v2
+      - name: Cache for npm dependencies
+        uses: actions/cache@v2
+        with:
+          path: |
+            ~/.pnpm-store
+            **/node_modules
+          key: ${{ runner.os }}-pnpm-${{ hashFiles('**/pnpm-lock.yaml') }}
+          restore-keys: |
+            ${{ runner.os }}-pnpm-
+      - name: Cache for maven dependencies
+        uses: actions/cache@v2
+        with:
+          path: ~/.m2/repository
+          key: maven-repo-${{ hashFiles('**/pom.xml') }}-${{ matrix.java }}
+          restore-keys: |
+            maven-repo-${{ hashFiles('**/pom.xml') }}
+            maven-repo-
+      - name: Setup java
+        uses: actions/setup-java@v1
+        with:
+          java-version: ${{ matrix.java }}
+      - name: Run a full build
+        run: hadoop-ozone/dev-support/checks/build.sh -Pcoverage -Pdist
+      - name: Store binaries for tests
+        uses: actions/upload-artifact@v2
+        if: matrix.java == '8'
+        with:
+          name: ozone-bin
+          path: hadoop-ozone/dist/target/hadoop-ozone*.tar.gz
+          retention-days: 1
+      - name: Delete temporary build artifacts before caching
+        run: |
+          #Never cache local artifacts
+          rm -rf ~/.m2/repository/org/apache/hadoop/hadoop-hdds*
+          rm -rf ~/.m2/repository/org/apache/hadoop/hadoop-ozone*
+        if: always()
+   acceptance:
+    needs: compile
     runs-on: ubuntu-18.04
     timeout-minutes: 120
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
@@ -66,4 +114,4 @@ jobs:
           name: acceptance-${{ matrix.suite }}
           path: /mnt/ozone/target/acceptance
         continue-on-error: true
- 
+  
