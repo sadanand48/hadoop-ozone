@@ -164,15 +164,14 @@ public class ContainerStateMachine extends BaseStateMachine {
     int numPendingRequests = conf
         .getObject(DatanodeRatisServerConfig.class)
         .getLeaderNumPendingRequests();
-    long pendingRequestsBytesLimit = (long)conf.getStorageSize(
+    int pendingRequestsMegaBytesLimit = (int) conf.getStorageSize(
         OzoneConfigKeys.DFS_CONTAINER_RATIS_LEADER_PENDING_BYTES_LIMIT,
         OzoneConfigKeys.DFS_CONTAINER_RATIS_LEADER_PENDING_BYTES_LIMIT_DEFAULT,
         StorageUnit.MB);
-    int pendingRequestsMegaBytesLimit =
-        HddsUtils.roundupMb(pendingRequestsBytesLimit);
     stateMachineDataCache = new ResourceLimitCache<>(new ConcurrentHashMap<>(),
-        (index, data) -> new int[] {1, HddsUtils.roundupMb(data.size())},
-        numPendingRequests, pendingRequestsMegaBytesLimit);
+        (index, data) -> new int[] {1,
+            (int) StorageUnit.MB.fromBytes(data.size()) }, numPendingRequests,
+        pendingRequestsMegaBytesLimit);
 
     this.chunkExecutors = chunkExecutors;
 
