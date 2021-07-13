@@ -70,7 +70,7 @@ jobs:
           rm -rf ~/.m2/repository/org/apache/hadoop/hadoop-hdds*
           rm -rf ~/.m2/repository/org/apache/hadoop/hadoop-ozone*
         if: always()
-   acceptance:
+  acceptance:
     needs: compile
     runs-on: ubuntu-18.04
     timeout-minutes: 120
