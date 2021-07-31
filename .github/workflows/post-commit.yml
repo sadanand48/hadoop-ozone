@@ -16,24 +16,26 @@ name: build-branch
 on:
   pull_request:
     types: [opened, reopened, ready_for_review, synchronize]
+  issue_comment:
+    types: [created, edited, deleted]
   push:
   schedule:
     - cron: 30 0,12 * * *
 env:
-  FAIL_FAST: ${{ github.event_name == 'pull_request' }}
+  FAIL_FAST: ${{ github.event_name == 'pull_request' || github.event.issue.pull_request }}
   MAVEN_OPTS: -Dhttp.keepAlive=false -Dmaven.wagon.http.pool=false -Dmaven.wagon.http.retryHandler.class=standard -Dmaven.wagon.http.retryHandler.count=3
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || github.event.issue.pull_request }}
 jobs:
   compile:
     runs-on: ubuntu-18.04
     timeout-minutes: 30
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false || contains(github.event.comment.body, '/retest')
     strategy:
       matrix:
         java: [ 8, 11 ]
-      fail-fast: ${{ github.event_name == 'pull_request' }}
+      fail-fast: ${{ github.event_name == 'pull_request' || github.event.issue.pull_request }}
     steps:
       - name: Checkout project
         uses: actions/checkout@v2
@@ -76,7 +78,7 @@ jobs:
   basic:
     runs-on: ubuntu-18.04
     timeout-minutes: 40
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false || contains(github.event.comment.body, '/retest')
     strategy:
       matrix:
         check:
@@ -87,7 +89,7 @@ jobs:
           - findbugs
           - rat
           - unit
-      fail-fast: ${{ github.event_name == 'pull_request' }}
+      fail-fast: ${{ github.event_name == 'pull_request' || github.event.issue.pull_request }}
     steps:
       - name: Checkout project
         uses: actions/checkout@v2
@@ -123,7 +125,7 @@ jobs:
     needs: compile
     runs-on: ubuntu-18.04
     timeout-minutes: 5
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false || contains(github.event.comment.body, '/retest')
     steps:
       - name: Checkout project
         uses: actions/checkout@v2
@@ -150,14 +152,14 @@ jobs:
     needs: compile
     runs-on: ubuntu-18.04
     timeout-minutes: 120 # Todo HDDS-5270
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false || contains(github.event.comment.body, '/retest')
     strategy:
       matrix:
         suite:
           - secure
           - unsecure
           - misc
-      fail-fast: ${{ github.event_name == 'pull_request' }}
+      fail-fast: ${{ github.event_name == 'pull_request' || github.event.issue.pull_request }}
     steps:
       - name: Checkout project
         uses: actions/checkout@v2
@@ -196,7 +198,7 @@ jobs:
     needs: compile
     runs-on: ubuntu-18.04
     timeout-minutes: 60
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false || contains(github.event.comment.body, '/retest')
     steps:
       - name: Checkout project
         uses: actions/checkout@v2
@@ -228,14 +230,14 @@ jobs:
   integration:
     runs-on: ubuntu-18.04
     timeout-minutes: 150
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false || contains(github.event.comment.body, '/retest')
     strategy:
       matrix:
         profile:
           - client
           - filesystem-hdds
           - ozone
-      fail-fast: ${{ github.event_name == 'pull_request' }}
+      fail-fast: ${{ github.event_name == 'pull_request' || github.event.issue.pull_request }}
     steps:
       - name: Setup link to SSD
         run: sudo mkdir mnt && sudo mount --bind /mnt `pwd`/mnt && sudo chmod 777 mnt
