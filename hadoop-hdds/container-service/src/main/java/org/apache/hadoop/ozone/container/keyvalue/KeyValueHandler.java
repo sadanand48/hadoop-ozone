@@ -665,7 +665,7 @@ public class KeyValueHandler extends Handler {
   }
 
   /**
-   * Handle Write Chunk operation. Calls ChunkManager to process the request.
+   * Handle Write Chunk operation.
    */
   ContainerCommandResponseProto handleWriteChunk(
       ContainerCommandRequestProto request, KeyValueContainer kvContainer,
