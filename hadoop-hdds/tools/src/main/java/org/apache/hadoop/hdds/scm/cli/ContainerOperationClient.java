@@ -232,6 +232,7 @@ public class ContainerOperationClient implements ScmClient {
           pipeline);
     }
   }
+  
 
   @Override
   public ContainerWithPipeline createContainer(HddsProtos.ReplicationType type,
