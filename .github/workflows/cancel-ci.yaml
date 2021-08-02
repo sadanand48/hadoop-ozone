@@ -29,5 +29,4 @@ jobs:
           cancelMode: failedJobs
           token: ${{ secrets.GITHUB_TOKEN }}
           skipEventTypes: '["push", "schedule"]'
-          jobNameRegexps: '["^.*$"]'
-          workflowFileName: post-commit.yml
+          jobNameRegexps: '["^.*$"]
