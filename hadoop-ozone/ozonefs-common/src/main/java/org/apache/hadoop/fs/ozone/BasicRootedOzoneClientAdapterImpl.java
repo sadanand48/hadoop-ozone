@@ -406,18 +406,11 @@ public class BasicRootedOzoneClientAdapterImpl
     try {
       // Hadoop CopyCommands class always sets recursive to true
       OzoneBucket bucket = getBucket(ofsPath, recursive);
-      OzoneDataStreamOutput ozoneDataStreamOutput = null;
-      if (replication == ReplicationFactor.ONE.getValue()
-          || replication == ReplicationFactor.THREE.getValue()) {
-
-        ozoneDataStreamOutput = bucket.createStreamFile(key, 0,
-            ReplicationConfig.adjustReplication(
-                clientConfiguredReplicationConfig, replication, config),
-            overWrite, recursive);
-      } else {
-        ozoneDataStreamOutput = bucket.createStreamFile(
-            key, 0, clientConfiguredReplicationConfig, overWrite, recursive);
-      }
+      OzoneDataStreamOutput ozoneDataStreamOutput = bucket
+          .createStreamFile(key, 0, OzoneClientUtils
+              .resolveClientSideReplicationConfig(replication,
+                  this.clientConfiguredReplicationConfig,
+                  bucket.getReplicationConfig(), config), overWrite, recursive);
       return new OzoneFSDataStreamOutput(
           ozoneDataStreamOutput.getByteBufStreamOutput());
     } catch (OMException ex) {
