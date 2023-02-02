@@ -17,6 +17,9 @@ on:
   pull_request:
     types: [opened, ready_for_review, synchronize]
   push:
+  concurrency:
+    group: ci-${{ github.event.pull_request.number || github.sha }}
+    cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   check1:
     if: ${{ github.event.action != 'edited' || github.event.changes.base }}
