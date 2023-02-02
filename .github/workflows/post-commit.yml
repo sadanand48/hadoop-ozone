@@ -15,17 +15,17 @@
 name: sample
 on:
   pull_request:
-    types: [opened, ready_for_review, synchronize, edited]
+    types: [opened, ready_for_review, synchronize]
   push:
 jobs:
   check1:
     if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     runs-on: ubuntu-20.04
     steps:
-      - run: sleep 10
+      - run: sleep 20
   check2:
     if: ${{ github.event.action != 'edited' || github.event.changes.base }}
     needs: check1
     runs-on: ubuntu-20.04
     steps:
-      - run: sleep 10
+      - run: sleep 20
