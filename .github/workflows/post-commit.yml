@@ -12,15 +12,20 @@
 # WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
 # See the License for the specific language governing permissions and
 # limitations under the License.
-name: build-branch
+name: sample
 on:
   pull_request:
-    types: [opened, ready_for_review, synchronize]
+    types: [opened, ready_for_review, synchronize, edited]
   push:
-concurrency:
-  group: ci-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
-  CI:
-    uses: ./.github/workflows/ci.yml
-    secrets: inherit
+  check1:
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
+    runs-on: ubuntu-20.04
+    steps:
+      - run: sleep 10
+  check2:
+    if: ${{ github.event.action != 'edited' || github.event.changes.base }}
+    needs: check1
+    runs-on: ubuntu-20.04
+    steps:
+      - run: sleep 10
