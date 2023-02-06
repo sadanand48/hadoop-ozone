@@ -18,7 +18,10 @@
 
 package org.apache.hadoop.ozone.om.snapshot;
 
+import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.utils.db.Table;
+import org.apache.hadoop.ozone.OFSPath;
 import org.apache.hadoop.ozone.om.OMMetadataManager;
 import org.apache.hadoop.ozone.om.OmMetadataManagerImpl;
 import org.apache.hadoop.ozone.om.OmSnapshot;
@@ -28,9 +31,6 @@ import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.SnapshotInfo;
 import org.apache.hadoop.ozone.om.helpers.WithObjectID;
 import org.apache.hadoop.ozone.snapshot.SnapshotDiffReport;
-import org.apache.hadoop.ozone.snapshot.SnapshotDiffReport.DiffType;
-import org.apache.hadoop.ozone.snapshot.SnapshotDiffReport.DiffReportEntry;
-
 import org.apache.ozone.rocksdb.util.ManagedSstFileReader;
 import org.apache.ozone.rocksdb.util.RdbUtil;
 import org.apache.ozone.rocksdiff.DifferSnapshotInfo;
@@ -51,6 +51,7 @@ import java.util.Set;
 import java.util.stream.Stream;
 
 import static org.apache.hadoop.ozone.OzoneConsts.OM_KEY_PREFIX;
+import static org.apache.hadoop.ozone.OzoneConsts.OZONE_URI_DELIMITER;
 
 /**
  * Class to generate snapshot diff.
@@ -152,9 +153,13 @@ public class SnapshotDiffManager {
           oldObjIdToKeyMap, newObjIdToKeyMap, objectIDsToCheck, true);
     }
 
-    return new SnapshotDiffReport(volume, bucket, fromSnapshot.getName(),
-        toSnapshot.getName(), generateDiffReport(objectIDsToCheck,
-        oldObjIdToKeyMap, newObjIdToKeyMap));
+    Path bucketPath = new Path(
+        OZONE_URI_DELIMITER + volume + OZONE_URI_DELIMITER + bucket);
+    OFSPath path = new OFSPath(bucketPath, new OzoneConfiguration());
+    return new SnapshotDiffReport(path.toString(), fromSnapshot.getName(),
+        toSnapshot.getName(),
+        generateDiffReport(objectIDsToCheck, oldObjIdToKeyMap,
+            newObjIdToKeyMap), volume, bucket);
   }
 
   private void addToObjectIdMap(Table<String, ? extends WithObjectID> fsTable,
@@ -270,16 +275,20 @@ public class SnapshotDiffManager {
     return deltaFiles;
   }
 
-  private List<DiffReportEntry> generateDiffReport(
+  private List<org.apache.hadoop.hdfs.protocol.SnapshotDiffReport.
+      DiffReportEntry> generateDiffReport(
       final Set<Long> objectIDsToCheck,
       final Map<Long, String> oldObjIdToKeyMap,
       final Map<Long, String> newObjIdToKeyMap) {
 
-    final List<DiffReportEntry> deleteDiffs = new ArrayList<>();
-    final List<DiffReportEntry> renameDiffs = new ArrayList<>();
-    final List<DiffReportEntry> createDiffs = new ArrayList<>();
-    final List<DiffReportEntry> modifyDiffs = new ArrayList<>();
-
+    final List<org.apache.hadoop.hdfs.protocol.SnapshotDiffReport
+        .DiffReportEntry> deleteDiffs = new ArrayList<>();
+    final List<org.apache.hadoop.hdfs.protocol.SnapshotDiffReport
+        .DiffReportEntry> renameDiffs = new ArrayList<>();
+    final List<org.apache.hadoop.hdfs.protocol.SnapshotDiffReport
+        .DiffReportEntry> createDiffs = new ArrayList<>();
+    final List<org.apache.hadoop.hdfs.protocol.SnapshotDiffReport
+        .DiffReportEntry> modifyDiffs = new ArrayList<>();
 
     for (Long id : objectIDsToCheck) {
       /*
@@ -306,25 +315,42 @@ public class SnapshotDiffManager {
 
       // Key Created.
       if (oldKeyName == null) {
-        createDiffs.add(DiffReportEntry.of(DiffType.CREATE, newKeyName));
+        createDiffs.add(
+            new org.apache.hadoop.hdfs.protocol.SnapshotDiffReport
+                .DiffReportEntry(org.apache.hadoop.hdfs.protocol
+                .SnapshotDiffReport.DiffType.CREATE,
+                newKeyName.getBytes()));
         continue;
       }
 
       // Key Deleted.
       if (newKeyName == null) {
-        deleteDiffs.add(DiffReportEntry.of(DiffType.DELETE, oldKeyName));
+        deleteDiffs.add(
+            new org.apache.hadoop.hdfs.protocol.SnapshotDiffReport
+                .DiffReportEntry(org.apache.hadoop.hdfs.protocol
+                .SnapshotDiffReport.DiffType.DELETE,
+                oldKeyName.getBytes()));
         continue;
       }
 
       // Key modified.
       if (oldKeyName.equals(newKeyName)) {
-        modifyDiffs.add(DiffReportEntry.of(DiffType.MODIFY, newKeyName));
+        modifyDiffs.add(
+            new org.apache.hadoop.hdfs.protocol.SnapshotDiffReport
+                .DiffReportEntry(
+                org.apache.hadoop.hdfs.protocol
+                    .SnapshotDiffReport.DiffType.MODIFY,
+                newKeyName.getBytes()));
         continue;
       }
 
       // Key Renamed.
-      renameDiffs.add(DiffReportEntry.of(DiffType.RENAME,
-          oldKeyName, newKeyName));
+      renameDiffs.add(
+          new org.apache.hadoop.hdfs.protocol.SnapshotDiffReport
+              .DiffReportEntry(
+              org.apache.hadoop.hdfs.protocol.SnapshotDiffReport
+                  .DiffType.RENAME,
+              oldKeyName.getBytes(), newKeyName.getBytes()));
     }
     /*
      * The order in which snap-diff should be applied
@@ -362,7 +388,8 @@ public class SnapshotDiffManager {
      *
      */
 
-    final List<DiffReportEntry> snapshotDiffs = new ArrayList<>();
+    final List<org.apache.hadoop.hdfs.protocol.SnapshotDiffReport
+        .DiffReportEntry> snapshotDiffs = new ArrayList<>();
     snapshotDiffs.addAll(deleteDiffs);
     snapshotDiffs.addAll(renameDiffs);
     snapshotDiffs.addAll(createDiffs);

@@ -85,7 +85,10 @@ public final class OmSnapshotManager {
         SnapshotInfo snapshotInfo;
         // see if the snapshot exists
         snapshotInfo = getSnapshotInfo(snapshotTableKey);
-
+        boolean isSnapshotInCache =
+            OmMetadataManagerImpl.isSnapshotPresentInTableCache(
+                snapshotTableKey,
+                ozoneManager.getMetadataManager().getSnapshotInfoTable());
         // read in the snapshot
         OzoneConfiguration conf = ozoneManager.getConfiguration();
         OMMetadataManager snapshotMetadataManager;
@@ -95,8 +98,8 @@ public final class OmSnapshotManager {
         // that
         try {
           snapshotMetadataManager = OmMetadataManagerImpl
-              .createSnapshotMetadataManager(
-              conf, snapshotInfo.getCheckpointDirName());
+              .createSnapshotMetadataManager(conf,
+                  snapshotInfo.getCheckpointDirName(), isSnapshotInCache);
         } catch (IOException e) {
           LOG.error("Failed to retrieve snapshot: {}, {}", snapshotTableKey, e);
           throw e;
@@ -152,6 +155,9 @@ public final class OmSnapshotManager {
 
     final DBCheckpoint dbCheckpoint = store.getSnapshot(
         snapshotInfo.getCheckpointDirName());
+
+    LOG.info("Created checkpoint : {} for snapshot {}",
+        dbCheckpoint.getCheckpointLocation(), snapshotInfo.getName());
 
     // Write snapshot generation (latest sequence number) to compaction log.
     // This will be used for DAG reconstruction as snapshotGeneration.
