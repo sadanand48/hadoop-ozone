@@ -56,8 +56,7 @@ public class TestStorageContainerManagerHttpServer {
   public static void setUp() throws Exception {
     File base = new File(BASEDIR);
     FileUtil.fullyDelete(base);
-    File ozoneMetadataDirectory = new File(BASEDIR, "metadata");
-    ozoneMetadataDirectory.mkdirs();
+    base.mkdirs();
     conf = new OzoneConfiguration();
     keystoresDir = new File(BASEDIR).getAbsolutePath();
     sslConfDir = KeyStoreTestUtil.getClasspathDir(
@@ -69,8 +68,6 @@ public class TestStorageContainerManagerHttpServer {
         KeyStoreTestUtil.getClientSSLConfigFileName());
     conf.set(OzoneConfigKeys.OZONE_SERVER_HTTPS_KEYSTORE_RESOURCE_KEY,
         KeyStoreTestUtil.getServerSSLConfigFileName());
-    conf.set(OzoneConfigKeys.OZONE_METADATA_DIRS,
-        ozoneMetadataDirectory.getAbsolutePath());
   }
 
   @AfterAll
