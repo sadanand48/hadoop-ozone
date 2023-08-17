@@ -44,6 +44,7 @@ import org.apache.hadoop.fs.PathIsNotEmptyDirectoryException;
 import org.apache.hadoop.fs.SafeModeAction;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hdds.annotation.InterfaceAudience;
+import org.apache.hadoop.hdds.client.DefaultReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationFactor;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
@@ -249,6 +250,13 @@ public class BasicRootedOzoneClientAdapterImpl
         createIfNotExist);
   }
 
+  OzoneBucket getBucket(OFSPath ofsPath, boolean createIfNotExist,ReplicationConfig replicationConfig)
+      throws IOException {
+
+    return getBucket(ofsPath.getVolumeName(), ofsPath.getBucketName(),
+        createIfNotExist,replicationConfig);
+  }
+
   /**
    * Get OzoneBucket object to operate in.
    * Optionally create volume and bucket if not found.
@@ -260,6 +268,11 @@ public class BasicRootedOzoneClientAdapterImpl
    */
   private OzoneBucket getBucket(String volumeStr, String bucketStr,
       boolean createIfNotExist) throws IOException {
+    return getBucket(volumeStr,bucketStr,createIfNotExist,null);
+  }
+
+  private OzoneBucket getBucket(String volumeStr, String bucketStr,
+      boolean createIfNotExist,ReplicationConfig defaultReplConfig) throws IOException {
     Preconditions.checkNotNull(volumeStr);
     Preconditions.checkNotNull(bucketStr);
 
@@ -304,9 +317,15 @@ public class BasicRootedOzoneClientAdapterImpl
           // Create the bucket
           try {
             // Buckets created by OFS should be in FSO layout
-            volume.createBucket(bucketStr,
-                BucketArgs.newBuilder().setBucketLayout(
-                    this.defaultOFSBucketLayout).build());
+            if (defaultReplConfig != null) {
+              volume.createBucket(bucketStr, BucketArgs.newBuilder()
+                  .setBucketLayout(this.defaultOFSBucketLayout)
+                  .setDefaultReplicationConfig(
+                      new DefaultReplicationConfig(defaultReplConfig)).build());
+            } else {
+              volume.createBucket(bucketStr, BucketArgs.newBuilder()
+                  .setBucketLayout(this.defaultOFSBucketLayout).build());
+            }
           } catch (OMException newBucEx) {
             // Ignore the case where another client created the bucket
             if (!newBucEx.getResult().equals(BUCKET_ALREADY_EXISTS)) {
@@ -327,7 +346,6 @@ public class BasicRootedOzoneClientAdapterImpl
 
     return bucket;
   }
-
   /**
    * This API returns the value what is configured at client side only. It could
    * differ from the server side default values. If no replication config
@@ -372,6 +390,34 @@ public class BasicRootedOzoneClientAdapterImpl
 
   protected void incrementCounter(Statistic objectsRead, long count) {
     //noop: Use RootedOzoneClientAdapterImpl which supports statistics.
+  }
+
+  public OzoneFSOutputStream createFile(String pathStr, short replication,
+      boolean overWrite, boolean recursive, ReplicationConfig defaultReplConfig) throws IOException {
+    incrementCounter(Statistic.OBJECTS_CREATED, 1);
+    OFSPath ofsPath = new OFSPath(pathStr, config);
+    if (ofsPath.isRoot() || ofsPath.isVolume() || ofsPath.isBucket()) {
+      throw new IOException("Cannot create file under root or volume.");
+    }
+    String key = ofsPath.getKeyName();
+    try {
+      // Hadoop CopyCommands class always sets recursive to true
+      OzoneBucket bucket =
+          getBucket(ofsPath, recursive, defaultReplConfig);
+      OzoneOutputStream ozoneOutputStream = bucket.createFile(key, 0,
+          OzoneClientUtils.resolveClientSideReplicationConfig(replication,
+              this.clientConfiguredReplicationConfig,
+              bucket.getReplicationConfig(), config), overWrite, recursive);
+      return new OzoneFSOutputStream(ozoneOutputStream);
+    } catch (OMException ex) {
+      if (ex.getResult() == OMException.ResultCodes.FILE_ALREADY_EXISTS
+          || ex.getResult() == OMException.ResultCodes.NOT_A_FILE) {
+        throw new FileAlreadyExistsException(
+            ex.getResult().name() + ": " + ex.getMessage());
+      } else {
+        throw ex;
+      }
+    }
   }
 
   @Override
@@ -1428,5 +1474,9 @@ public class BasicRootedOzoneClientAdapterImpl
 
     return ozoneClient.getProxy().getOzoneManagerClient().setSafeMode(
         action, isChecked);
+  }
+
+  public OzoneClient getOzoneClient() {
+    return ozoneClient;
   }
 }

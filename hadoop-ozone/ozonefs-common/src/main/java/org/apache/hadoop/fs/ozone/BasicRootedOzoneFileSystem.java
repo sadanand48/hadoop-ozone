@@ -38,10 +38,13 @@ import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.fs.ContentSummary;
 import org.apache.hadoop.hdds.annotation.InterfaceAudience;
 import org.apache.hadoop.hdds.annotation.InterfaceStability;
+import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.conf.StorageUnit;
 import org.apache.hadoop.hdds.utils.LegacyHadoopConfigurationSource;
+import org.apache.hadoop.hdfs.protocol.ECFilesystemCommon;
+import org.apache.hadoop.hdfs.protocol.ErasureCodingPolicy;
 import org.apache.hadoop.hdfs.protocol.SnapshotDiffReport;
 import org.apache.hadoop.ozone.OFSPath;
 import org.apache.hadoop.ozone.OzoneConfigKeys;
@@ -259,6 +262,18 @@ public class BasicRootedOzoneFileSystem extends FileSystem {
     statistics.incrementWriteOps(1);
     final String key = pathToKey(f);
     return createOutputStream(key, replication, overwrite, true);
+  }
+
+  public FSDataOutputStream create(Path f, FsPermission permission,
+      boolean overwrite, int bufferSize, short replication, long blockSize,
+      ReplicationConfig replicationConfig) throws IOException {
+    LOG.trace("create() path:{}", f);
+    incrementCounter(Statistic.INVOCATION_CREATE, 1);
+    statistics.incrementWriteOps(1);
+    final String key = pathToKey(f);
+    return new FSDataOutputStream(createFSOutputStream(
+        adapterImpl.createFile(key, replication, overwrite, true,
+            replicationConfig)), statistics);
   }
 
   @Override
@@ -1569,4 +1584,8 @@ public class BasicRootedOzoneFileSystem extends FileSystem {
     LOG.trace("setSafeMode() action:{}", action);
     return getAdapter().setSafeMode(action, isChecked);
   }
+  public ECFilesystemCommon getECFileSystemImpl(){
+    return new ECFilesystemCommonOzone(this.adapterImpl.getOzoneClient());
+  }
+
 }

@@ -766,4 +766,8 @@ public class BasicOzoneClientAdapterImpl implements OzoneClientAdapter {
     return ozoneClient.getProxy().getOzoneManagerClient().setSafeMode(
         action, isChecked);
   }
+
+  public OzoneClient getOzoneClient() {
+    return ozoneClient;
+  }
 }

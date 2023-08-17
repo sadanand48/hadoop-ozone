@@ -43,6 +43,7 @@ import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.conf.StorageUnit;
 import org.apache.hadoop.hdds.utils.LegacyHadoopConfigurationSource;
+import org.apache.hadoop.hdfs.protocol.ECFilesystemCommon;
 import org.apache.hadoop.ozone.OzoneConfigKeys;
 import org.apache.hadoop.ozone.client.io.SelectorOutputStream;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
@@ -1278,5 +1279,10 @@ public class BasicOzoneFileSystem extends FileSystem {
     }
     LOG.trace("setSafeMode() action:{}", action);
     return getAdapter().setSafeMode(action, isChecked);
+  }
+
+  public ECFilesystemCommon getECFileSystemImpl(){
+    BasicOzoneClientAdapterImpl adapterImpl = (BasicOzoneClientAdapterImpl) adapter;
+    return new ECFilesystemCommonOzone(adapterImpl.getOzoneClient());
   }
 }

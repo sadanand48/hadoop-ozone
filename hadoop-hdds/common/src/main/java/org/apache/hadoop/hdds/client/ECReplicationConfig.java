@@ -208,7 +208,7 @@ public class ECReplicationConfig implements ReplicationConfig {
         + "/" + data + "-" + parity + "-" + chunkKB();
   }
 
-  private String chunkKB() {
+  public String chunkKB() {
     return ecChunkSize / 1024 + "k";
   }
 }
