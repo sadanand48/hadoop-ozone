@@ -23,7 +23,9 @@ import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationFactor;
+import org.apache.hadoop.hdds.scm.PlacementPolicy;
 import org.apache.hadoop.hdds.scm.ScmConfigKeys;
+import org.apache.hadoop.hdds.scm.container.placement.algorithms.SCMContainerPlacementCapacity;
 import org.apache.hadoop.hdds.scm.container.replication.ReplicationManager;
 import org.apache.hadoop.hdds.scm.pipeline.Pipeline;
 import org.apache.hadoop.hdds.scm.pipeline.PipelineManager;
@@ -32,45 +34,52 @@ import org.apache.hadoop.ozone.MiniOzoneCluster;
 import org.apache.ozone.test.GenericTestUtils;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Assertions;
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 
 import java.nio.file.Path;
 import java.util.List;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
+import static java.util.concurrent.TimeUnit.SECONDS;
+import static org.apache.hadoop.hdds.HddsConfigKeys.HDDS_HEARTBEAT_INTERVAL;
+import static org.apache.hadoop.hdds.HddsConfigKeys.HDDS_PIPELINE_REPORT_INTERVAL;
+import static org.apache.hadoop.hdds.HddsConfigKeys.HDDS_COMMAND_STATUS_REPORT_INTERVAL;
 import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_DATANODE_PIPELINE_LIMIT;
+import static org.apache.hadoop.hdds.scm.ScmConfigKeys.OZONE_SCM_HEARTBEAT_PROCESS_INTERVAL;
 import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * This class tests SCM Safe mode with pipeline rules.
  */
 
-@Disabled
 public class TestSCMSafeModeWithPipelineRules {
 
   private MiniOzoneCluster cluster;
-  private OzoneConfiguration conf = new OzoneConfiguration();
+  private OzoneConfiguration conf;
   private PipelineManager pipelineManager;
-  private MiniOzoneCluster.Builder clusterBuilder;
 
-  public void setup(int numDatanodes, Path metadataDir) throws Exception {
-    conf.set(HddsConfigKeys.OZONE_METADATA_DIRS,
-        metadataDir.toAbsolutePath().toString());
+  public void setup(int numDatanodes) throws Exception {
+    conf = new OzoneConfiguration();
+    conf.setTimeDuration(OZONE_SCM_HEARTBEAT_PROCESS_INTERVAL,
+        100, TimeUnit.MILLISECONDS);
     conf.setBoolean(
         HddsConfigKeys.HDDS_SCM_SAFEMODE_PIPELINE_AVAILABILITY_CHECK,
         true);
     conf.set(HddsConfigKeys.HDDS_SCM_WAIT_TIME_AFTER_SAFE_MODE_EXIT, "10s");
     conf.set(ScmConfigKeys.OZONE_SCM_PIPELINE_CREATION_INTERVAL, "10s");
-    conf.setInt(OZONE_DATANODE_PIPELINE_LIMIT, 50);
+    conf.setInt(OZONE_DATANODE_PIPELINE_LIMIT,1);
+    conf.setTimeDuration(HDDS_HEARTBEAT_INTERVAL, 1, SECONDS);
+    conf.setTimeDuration(HDDS_PIPELINE_REPORT_INTERVAL, 1, SECONDS);
+    conf.setTimeDuration(HDDS_COMMAND_STATUS_REPORT_INTERVAL, 1, SECONDS);
+    conf.setBoolean(ScmConfigKeys.OZONE_SCM_DATANODE_DISALLOW_SAME_PEERS, true);
+    conf.setClass(ScmConfigKeys.OZONE_SCM_CONTAINER_PLACEMENT_IMPL_KEY,
+        SCMContainerPlacementCapacity.class, PlacementPolicy.class);
 
-    clusterBuilder = MiniOzoneCluster.newBuilder(conf)
+    cluster = MiniOzoneCluster.newBuilder(conf)
         .setNumDatanodes(numDatanodes)
-        .setHbInterval(1000)
-        .setHbProcessorInterval(1000);
-
-    cluster = clusterBuilder.build();
+        .build();
     cluster.waitForClusterToBeReady();
     StorageContainerManager scm = cluster.getStorageContainerManager();
     pipelineManager = scm.getPipelineManager();
@@ -81,8 +90,7 @@ public class TestSCMSafeModeWithPipelineRules {
   public void testScmSafeMode(@TempDir Path tempDir) throws Exception {
 
     int datanodeCount = 6;
-    setup(datanodeCount, tempDir);
-
+    setup(datanodeCount);
     waitForRatis3NodePipelines(datanodeCount / 3);
     waitForRatis1NodePipelines(datanodeCount);
 
@@ -193,7 +201,7 @@ public class TestSCMSafeModeWithPipelineRules {
         .getPipelines(RatisReplicationConfig
                 .getInstance(ReplicationFactor.THREE),
             Pipeline.PipelineState.OPEN)
-        .size() == numPipelines, 100, 60000);
+        .size() >= numPipelines, 100, 60000);
   }
 
   private void waitForRatis1NodePipelines(int numPipelines)
@@ -201,6 +209,6 @@ public class TestSCMSafeModeWithPipelineRules {
     GenericTestUtils.waitFor(() -> pipelineManager
         .getPipelines(RatisReplicationConfig.getInstance(ReplicationFactor.ONE),
             Pipeline.PipelineState.OPEN)
-        .size() == numPipelines, 100, 60000);
+        .size() >= numPipelines, 100, 60000);
   }
 }
