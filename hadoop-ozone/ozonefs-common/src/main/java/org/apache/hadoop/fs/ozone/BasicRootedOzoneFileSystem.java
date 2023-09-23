@@ -1173,7 +1173,7 @@ public class BasicRootedOzoneFileSystem extends FileSystem {
       if (thisListing != null && !thisListing.isEmpty()) {
         startPath = pathToKey(
             thisListing.get(thisListing.size() - 1).getPath());
-        LOG.debug("Got {} file status, next start path {}",
+        LOG.info("Got {} file status, next start path {}",
             thisListing.size(), startPath);
       }
       i = 0;
@@ -1259,6 +1259,9 @@ public class BasicRootedOzoneFileSystem extends FileSystem {
             .stream()
             .map(this::convertFileStatus)
             .collect(Collectors.toList());
+    LOG.info("listing page size : {}",listingPageSize);
+    LOG.info("listFileStatus() path:{} received {} entries", f,
+        statusList.size());
 
     if (!statusList.isEmpty() && !startPath.isEmpty()) {
       // Excluding the 1st file status element from list.

@@ -49,6 +49,7 @@ import static org.apache.hadoop.hdds.utils.HddsServerUtil.getRemoteUser;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_FS_LISTING_PAGE_SIZE;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_FS_LISTING_PAGE_SIZE_DEFAULT;
 import static org.apache.hadoop.ozone.OzoneConfigKeys.OZONE_FS_LISTING_PAGE_SIZE_MAX;
+import static org.apache.hadoop.ozone.om.OzoneManager.LOG;
 import static org.apache.hadoop.ozone.om.OzoneManager.getS3Auth;
 import static org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes.INVALID_REQUEST;
 import org.apache.hadoop.ozone.security.acl.IAccessAuthorizer;
@@ -218,6 +219,8 @@ public class OmMetadataReader implements IOmMetadataReader, Auditor {
     maxListingPageSize = OzoneConfigUtil.limitValue(numEntries,
         OZONE_FS_LISTING_PAGE_SIZE, OZONE_FS_LISTING_PAGE_SIZE_MAX,
         maxListingPageSize);
+
+    LOG.info("Listing page size on OM: {}",maxListingPageSize);
 
     ResolvedBucket bucket = ozoneManager.resolveBucketLink(args);
 

@@ -1421,11 +1421,11 @@ public class KeyManagerImpl implements KeyManager {
       OmKeyInfo cacheOmKeyInfo = entry.getValue().getCacheValue();
       // cacheOmKeyInfo is null if an entry is deleted in cache
       if (cacheOmKeyInfo != null
-          && cacheKey.startsWith(startCacheKey)
+          && cacheKey.startsWith(keyArgs)
           && cacheKey.compareTo(startCacheKey) >= 0) {
         if (!recursive) {
           String remainingKey = StringUtils.stripEnd(cacheKey.substring(
-              startCacheKey.length()), OZONE_URI_DELIMITER);
+              keyArgs.length()), OZONE_URI_DELIMITER);
           // For non-recursive, the remaining part of key can't have '/'
           if (remainingKey.contains(OZONE_URI_DELIMITER)) {
             continue;
@@ -1541,12 +1541,16 @@ public class KeyManagerImpl implements KeyManager {
           bucketName);
     }
 
+    LOG.info("CacheKeyMap size before iterating DB : {}", cacheKeyMap.values().size());
+
     try {
       findKeyInDbWithIterator(recursive, startKey, numEntries, volumeName,
           bucketName, keyName, cacheKeyMap, keyArgs, keyTable, iterator);
     } finally {
       iterator.close();
     }
+
+    LOG.info("CacheKeyMap size after iterating DB : {}", cacheKeyMap.values().size());
 
     int countEntries;
 
@@ -1559,6 +1563,7 @@ public class KeyManagerImpl implements KeyManager {
       // flushed already and isKeyDeleted check may not work as expected
       // before putting entries in cacheKeyMap in findKeyInDbWithIterator call.
       if (fileStatus == null) {
+        LOG.info("Found deleted entry in cache");
         continue;
       }
       fileStatusList.add(fileStatus);
@@ -1581,6 +1586,7 @@ public class KeyManagerImpl implements KeyManager {
     if (args.getSortDatanodes()) {
       sortDatanodes(clientAddress, keyInfoList.toArray(new OmKeyInfo[0]));
     }
+    LOG.info("Returning filestatus list of size {}",fileStatusList.size());
     return fileStatusList;
   }
 
