@@ -45,22 +45,15 @@ jobs:
     runs-on: ubuntu-20.04
     outputs:
       matrix: ${{steps.generate.outputs.matrix}}
-      integration: ${{steps.check-test-existence.outputs.integration}}
     steps:
       - uses: actions/checkout@v3
         with:
           ref: ${{ github.event.inputs.ref }}
       - name: Check for Test File
-        id: check-test-existence
         run: |
           filename="$TEST_CLASS.java"
           found_file=$(find . -name "$filename" -type f -print -quit)
-          integration=false
           if [ -n "$found_file" ]; then
-              echo $found_file
-              if [[ "$found_file" == *"integration-test"* ]]; then
-                  integration=true
-              fi
               if [ "$TEST_METHOD" != "ALL" ]; then
                   if grep -q "public void $TEST_METHOD(" "$found_file"; then
                       echo "Test method $TEST_METHOD exists in $filename"
@@ -74,7 +67,6 @@ jobs:
               echo "Test file $filename not found.Stopping!"
               exit 1
           fi
-          echo "integration=$integration" >> $GITHUB_OUTPUT
       - id: generate
         name: Generate test matrix
         run: |
@@ -100,13 +92,11 @@ jobs:
         uses: actions/cache@v3
         with:
           path: ~/.m2/repository
-          key: maven-repo-${{ hashFiles('**/pom.xml') }}-8-${{ needs.prepare-job.outputs.integration == 'true' && 'integration' || 'unit' }}
+          key: maven-repo-${{ hashFiles('**/pom.xml') }}-8-single
           restore-keys: |
             maven-repo-${{ hashFiles('**/pom.xml') }}-8
             maven-repo-${{ hashFiles('**/pom.xml') }}
             maven-repo-
-            maven-repo-${{ hashFiles('**/pom.xml') }}-8-integration
-            maven-repo-${{ hashFiles('**/pom.xml') }}-8-unit
       - name: Setup java
         uses: actions/setup-java@v3
         with:
@@ -114,13 +104,12 @@ jobs:
           java-version: 8
       - name: Execute tests
         run: |
-          integration=${{ needs.prepare-job.outputs.integration }}
           if [ "$TEST_METHOD" = "ALL" ]; then
               echo "Running all tests from $TEST_CLASS"
-              hadoop-ozone/dev-support/checks/run-junit.sh -Dtest=$TEST_CLASS $integration
+              hadoop-ozone/dev-support/checks/junit.sh -Dtest=$TEST_CLASS
           else
               echo "Running test: $TEST_METHOD from $TEST_CLASS"
-              hadoop-ozone/dev-support/checks/run-junit.sh -Dtest=$TEST_CLASS#$TEST_METHOD $integration
+              hadoop-ozone/dev-support/checks/junit.sh -Dtest=$TEST_CLASS#$TEST_METHOD
           fi
         env:
           ITERATIONS: ${{ github.event.inputs.iterations }}
