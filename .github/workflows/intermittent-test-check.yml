@@ -106,14 +106,13 @@ jobs:
         run: |
           if [ "$TEST_METHOD" = "ALL" ]; then
               echo "Running all tests from $TEST_CLASS"
-              source hadoop-ozone/dev-support/checks/junit.sh -Dtest=$TEST_CLASS
+              hadoop-ozone/dev-support/checks/integration.sh -Dtest=$TEST_CLASS
           else
               echo "Running test: $TEST_METHOD from $TEST_CLASS"
-              source hadoop-ozone/dev-support/checks/junit.sh -Dtest=$TEST_CLASS#$TEST_METHOD
+              hadoop-ozone/dev-support/checks/integration.sh -Dtest=$TEST_CLASS#$TEST_METHOD
           fi
         env:
           ITERATIONS: ${{ github.event.inputs.iterations }}
-          CHECK: integration
       - name: Summary of failures
         run: cat target/integration/summary.txt
         if: always()
