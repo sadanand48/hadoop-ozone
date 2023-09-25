@@ -112,12 +112,17 @@ jobs:
           java-version: 8
       - name: Execute tests
         run: |
+          test_type=${{ needs.prepare-job.outputs.test_type }}
+          args=""
+          if [ "$test_type" = "integration" ]; then
+              args="-pl :ozone-integration-test,:mini-chaos-tests"
+          fi
           if [ "$TEST_METHOD" = "ALL" ]; then
               echo "Running all tests from $TEST_CLASS"
-              hadoop-ozone/dev-support/checks/junit.sh -pl :ozone-integration-test,:mini-chaos-tests -Dtest=$TEST_CLASS
+              hadoop-ozone/dev-support/checks/junit.sh $args -Dtest=$TEST_CLASS
           else
               echo "Running test: $TEST_METHOD from $TEST_CLASS"
-              hadoop-ozone/dev-support/checks/junit.sh -pl :ozone-integration-test,:mini-chaos-tests -Dtest=$TEST_CLASS#$TEST_METHOD
+              hadoop-ozone/dev-support/checks/junit.sh $args -Dtest=$TEST_CLASS#$TEST_METHOD
           fi
         env:
           ITERATIONS: ${{ github.event.inputs.iterations }}
