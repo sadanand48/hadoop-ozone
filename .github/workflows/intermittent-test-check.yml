@@ -45,15 +45,22 @@ jobs:
     runs-on: ubuntu-20.04
     outputs:
       matrix: ${{steps.generate.outputs.matrix}}
+      test_type: ${{steps.check-test-existence.outputs.test_type}}
     steps:
       - uses: actions/checkout@v3
         with:
           ref: ${{ github.event.inputs.ref }}
       - name: Check for Test File
+        id: check-test-existence
         run: |
           filename="$TEST_CLASS.java"
           found_file=$(find . -name "$filename" -type f -print -quit)
+          test_type=unit
           if [ -n "$found_file" ]; then
+              echo "File path : $found_file"
+              if [[ "$found_file" == *"integration-test"* ]]; then
+                  test_type=integration
+              fi 
               if [ "$TEST_METHOD" != "ALL" ]; then
                   if grep -q "public void $TEST_METHOD(" "$found_file"; then
                       echo "Test method $TEST_METHOD exists in $filename"
@@ -67,6 +74,7 @@ jobs:
               echo "Test file $filename not found.Stopping!"
               exit 1
           fi
+          echo "test_type=$test_type" >> $GITHUB_OUTPUT
       - id: generate
         name: Generate test matrix
         run: |
@@ -106,22 +114,23 @@ jobs:
         run: |
           if [ "$TEST_METHOD" = "ALL" ]; then
               echo "Running all tests from $TEST_CLASS"
-              hadoop-ozone/dev-support/checks/integration.sh -Dtest=$TEST_CLASS
+              source hadoop-ozone/dev-support/checks/junit.sh -Dtest=$TEST_CLASS
           else
               echo "Running test: $TEST_METHOD from $TEST_CLASS"
-              hadoop-ozone/dev-support/checks/integration.sh -Dtest=$TEST_CLASS#$TEST_METHOD
+              source hadoop-ozone/dev-support/checks/junit.sh -Dtest=$TEST_CLASS#$TEST_METHOD
           fi
         env:
           ITERATIONS: ${{ github.event.inputs.iterations }}
+          CHECK: ${{ needs.prepare-job.outputs.test_type }}
       - name: Summary of failures
-        run: cat target/integration/summary.txt
+        run: cat target/${{ needs.prepare-job.outputs.test_type }}/summary.txt
         if: always()
       - name: Archive build results
         uses: actions/upload-artifact@v3
         if: always()
         with:
           name: result-${{ env.TEST_CLASS }}-split-${{ matrix.split }}
-          path: target/integration
+          path: target/${{ needs.prepare-job.outputs.test_type }}
       - name: Delete temporary build artifacts before caching
         run: |
           #Never cache local artifacts
