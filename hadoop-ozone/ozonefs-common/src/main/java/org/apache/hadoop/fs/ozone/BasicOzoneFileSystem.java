@@ -30,6 +30,7 @@ import org.apache.hadoop.fs.FileStatus;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.InvalidPathException;
 import org.apache.hadoop.fs.LocatedFileStatus;
+import org.apache.hadoop.fs.Options;
 import org.apache.hadoop.fs.Options.Rename;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.PathFilter;
@@ -39,10 +40,16 @@ import org.apache.hadoop.fs.SafeModeAction;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hdds.annotation.InterfaceAudience;
 import org.apache.hadoop.hdds.annotation.InterfaceStability;
+import org.apache.hadoop.hdds.client.ECReplicationConfig;
+import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.conf.StorageUnit;
 import org.apache.hadoop.hdds.utils.LegacyHadoopConfigurationSource;
+import org.apache.hadoop.hdfs.protocol.ErasureCodingPolicy;
+import org.apache.hadoop.hdfs.protocol.SystemErasureCodingPolicies;
+import org.apache.hadoop.io.erasurecode.ECSchema;
+import org.apache.hadoop.ozone.OFSPath;
 import org.apache.hadoop.ozone.OzoneConfigKeys;
 import org.apache.hadoop.ozone.client.io.SelectorOutputStream;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
@@ -130,6 +137,8 @@ public class BasicOzoneFileSystem extends FileSystem {
 
   private static final int PATH_DEPTH_TO_BUCKET = 0;
 
+  private BasicOzoneClientAdapterImpl adapterImpl;
+
   @Override
   public void initialize(URI name, Configuration conf) throws IOException {
     super.initialize(name, conf);
@@ -199,6 +208,7 @@ public class BasicOzoneFileSystem extends FileSystem {
       this.adapter =
           createAdapter(source, bucketStr,
               volumeStr, omHost, omPort);
+      adapterImpl = (BasicOzoneClientAdapterImpl) this.adapter;
 
       try {
         this.userName =
@@ -1293,5 +1303,53 @@ public class BasicOzoneFileSystem extends FileSystem {
     }
     LOG.trace("setSafeMode() action:{}", action);
     return getAdapter().setSafeMode(action, isChecked);
+  }
+
+  public String getErasureCodingPolicy(FileStatus status) {
+    OFSPath ofsPath =
+        new OFSPath(status.getPath().toString(), new OzoneConfiguration());
+    try {
+      ECReplicationConfig replicationConfig =
+          (ECReplicationConfig) adapterImpl.getOzoneClient().getObjectStore()
+              .getVolume(ofsPath.getVolumeName())
+              .getBucket(ofsPath.getBucketName()).getReplicationConfig();
+      ECReplicationConfig.EcCodec ecCodec = replicationConfig.getCodec();
+      int ecChunkSize = replicationConfig.getEcChunkSize();
+      int data = replicationConfig.getData();
+      int parity = replicationConfig.getParity();
+      ECSchema ecSchema = new ECSchema(ecCodec.name(),data,parity);
+      return new ErasureCodingPolicy(ecSchema,ecChunkSize).getName();
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  public void setErasureCodingPolicy(Path path,
+      String ecPolicyName) throws IOException {
+    ErasureCodingPolicy ecPolicy =
+        SystemErasureCodingPolicies.getByName(ecPolicyName);
+    String ecRep = ecPolicy.getCodecName()
+        .toLowerCase() + "-" + ecPolicy.getNumDataUnits() + "-"
+        + ecPolicy.getNumParityUnits() + "-" + ecPolicy.getCellSize() + "k";
+    OFSPath ofsPath = new OFSPath(path.toString(), new OzoneConfiguration());
+    adapterImpl.getOzoneClient().getObjectStore()
+        .getVolume(ofsPath.getVolumeName())
+        .getBucket(ofsPath.getBucketName())
+        .setReplicationConfig(new ECReplicationConfig(ecRep));
+  }
+
+  public FSDataOutputStream createECOutputStream(Path f,
+      FsPermission permission, int bufferSize, short replication,
+      long blockSize, Options.ChecksumOpt checksumOpt, String ecPolicyName)
+      throws IOException {
+    ReplicationConfig replicationConfig =
+        new ECReplicationConfig(ecPolicyName.toLowerCase());
+    LOG.trace("create() path:{}", f);
+    incrementCounter(Statistic.INVOCATION_CREATE, 1);
+    statistics.incrementWriteOps(1);
+    final String key = pathToKey(f);
+    return new FSDataOutputStream(createFSOutputStream(
+        adapterImpl.createFile(key, replication, true, true,
+            replicationConfig)), statistics);
   }
 }

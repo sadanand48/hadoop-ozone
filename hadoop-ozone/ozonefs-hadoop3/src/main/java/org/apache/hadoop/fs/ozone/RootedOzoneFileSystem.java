@@ -22,18 +22,25 @@ import org.apache.hadoop.fs.LeaseRecoverable;
 import org.apache.hadoop.fs.Path;
 import org.apache.hadoop.fs.SafeMode;
 import org.apache.hadoop.fs.SafeModeAction;
+import org.apache.hadoop.fs.FileStatus;
+import org.apache.hadoop.fs.FSDataOutputStream;
+import org.apache.hadoop.fs.FileSystem;
+import org.apache.hadoop.fs.permission.FsPermission;
+import org.apache.hadoop.fs.CreateFlag;
+import org.apache.hadoop.fs.Options;
+import org.apache.hadoop.fs.StorageStatistics;
 import org.apache.hadoop.hdds.annotation.InterfaceAudience;
 import org.apache.hadoop.hdds.annotation.InterfaceStability;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.crypto.key.KeyProvider;
 import org.apache.hadoop.crypto.key.KeyProviderTokenIssuer;
-import org.apache.hadoop.fs.FileSystem;
-import org.apache.hadoop.fs.StorageStatistics;
 import org.apache.hadoop.security.token.DelegationTokenIssuer;
+import org.apache.hadoop.util.Progressable;
 
 import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
+import java.util.EnumSet;
 
 /**
  * The Rooted Ozone Filesystem (OFS) implementation.
@@ -153,5 +160,35 @@ public class RootedOzoneFileSystem extends BasicRootedOzoneFileSystem
   public boolean setSafeMode(SafeModeAction action, boolean isChecked)
       throws IOException {
     return setSafeModeUtil(action, isChecked);
+  }
+
+  @Override
+  public FSDataOutputStream createNonRecursive(Path path,
+      FsPermission permission, EnumSet<CreateFlag> flags, int bufferSize,
+      short replication, long blockSize, Progressable progress)
+      throws IOException {
+    return super.createNonRecursive(path, permission, flags, bufferSize,
+        replication, blockSize, progress);
+  }
+
+  @Override
+  public String getErasureCodingPolicy(FileStatus status) {
+    return super.getErasureCodingPolicy(status);
+  }
+
+  @Override
+  public void setErasureCodingPolicy(Path path, String ecCodecName,
+      int dataUnits, int parityUnits, int cellSize) throws IOException {
+    super.setErasureCodingPolicy(path, ecCodecName, dataUnits, parityUnits,
+        cellSize);
+  }
+
+  @Override
+  public FSDataOutputStream createECOutputStream(Path f,
+      FsPermission permission, int bufferSize, short replication,
+      long blockSize, Options.ChecksumOpt checksumOpt, String ecPolicyName)
+      throws IOException {
+    return super.createECOutputStream(f, permission, bufferSize, replication,
+        blockSize, checksumOpt, ecPolicyName);
   }
 }

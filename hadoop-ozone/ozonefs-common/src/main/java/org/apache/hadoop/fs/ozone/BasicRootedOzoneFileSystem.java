@@ -38,6 +38,8 @@ import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.fs.ContentSummary;
 import org.apache.hadoop.hdds.annotation.InterfaceAudience;
 import org.apache.hadoop.hdds.annotation.InterfaceStability;
+import org.apache.hadoop.hdds.client.ECReplicationConfig;
+import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.conf.StorageUnit;
@@ -1587,5 +1589,56 @@ public class BasicRootedOzoneFileSystem extends FileSystem {
     }
     LOG.trace("setSafeMode() action:{}", action);
     return getAdapter().setSafeMode(action, isChecked);
+  }
+
+  public String getErasureCodingPolicy(FileStatus status) {
+    OFSPath ofsPath =
+        new OFSPath(status.getPath().toString(), new OzoneConfiguration());
+    try {
+      ECReplicationConfig replicationConfig =
+          (ECReplicationConfig) adapterImpl.getObjectStore()
+              .getVolume(ofsPath.getVolumeName())
+              .getBucket(ofsPath.getBucketName()).getReplicationConfig();
+      ECReplicationConfig.EcCodec ecCodec = replicationConfig.getCodec();
+      int ecChunkSize = replicationConfig.getEcChunkSize();
+      int data = replicationConfig.getData();
+      int parity = replicationConfig.getParity();
+      return composePolicyName(ecCodec.name(),data,parity,ecChunkSize);
+    } catch (IOException e) {
+      throw new RuntimeException(e);
+    }
+  }
+
+  public static String composePolicyName(String codecName, int dataUnits,
+      int parityUnits, int cellSize) {
+    return codecName.toUpperCase() + "-" + dataUnits + "-" +
+        parityUnits + "-" + cellSize / 1024 + "k";
+  }
+
+  public void setErasureCodingPolicy(Path path, String ecCodecName,
+      int dataUnits, int parityUnits, int cellSize)
+      throws IOException {
+    String ecRep = ecCodecName
+        .toLowerCase() + "-" + dataUnits + "-" +
+        parityUnits + "-" + cellSize + "k";
+    OFSPath ofsPath = new OFSPath(path.toString(), new OzoneConfiguration());
+    adapterImpl.getObjectStore().getVolume(ofsPath.getVolumeName())
+        .getBucket(ofsPath.getBucketName())
+        .setReplicationConfig(new ECReplicationConfig(ecRep));
+  }
+
+  public FSDataOutputStream createECOutputStream(Path f,
+      FsPermission permission, int bufferSize, short replication,
+      long blockSize, Options.ChecksumOpt checksumOpt, String ecPolicyName)
+      throws IOException {
+    ReplicationConfig replicationConfig =
+        new ECReplicationConfig(ecPolicyName.toLowerCase());
+    LOG.trace("create() path:{}", f);
+    incrementCounter(Statistic.INVOCATION_CREATE, 1);
+    statistics.incrementWriteOps(1);
+    final String key = pathToKey(f);
+    return new FSDataOutputStream(createFSOutputStream(
+        adapterImpl.createFile(key, replication, true, true,
+            replicationConfig)), statistics);
   }
 }

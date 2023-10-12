@@ -262,6 +262,28 @@ public class BasicOzoneClientAdapterImpl implements OzoneClientAdapter {
     }
   }
 
+  public OzoneFSOutputStream createFile(String key, short replication,
+      boolean overWrite, boolean recursive, ReplicationConfig clientReplConfig)
+      throws IOException {
+    incrementCounter(Statistic.OBJECTS_CREATED, 1);
+    try {
+      // Hadoop CopyCommands class always sets recursive to true
+      OzoneOutputStream ozoneOutputStream = bucket.createFile(key, 0,
+          OzoneClientUtils.resolveClientSideReplicationConfig(replication,
+              clientReplConfig, bucket.getReplicationConfig(), config),
+          overWrite, recursive);
+      return new OzoneFSOutputStream(ozoneOutputStream);
+    } catch (OMException ex) {
+      if (ex.getResult() == OMException.ResultCodes.FILE_ALREADY_EXISTS
+          || ex.getResult() == OMException.ResultCodes.NOT_A_FILE) {
+        throw new FileAlreadyExistsException(
+            ex.getResult().name() + ": " + ex.getMessage());
+      } else {
+        throw ex;
+      }
+    }
+  }
+
   private ReplicationConfig getReplicationConfigWithRefreshCheck()
       throws IOException {
     if (clock.millis() > nextReplicationConfigRefreshTime) {
@@ -767,5 +789,9 @@ public class BasicOzoneClientAdapterImpl implements OzoneClientAdapter {
 
     return ozoneClient.getProxy().getOzoneManagerClient().setSafeMode(
         action, isChecked);
+  }
+
+  public OzoneClient getOzoneClient() {
+    return ozoneClient;
   }
 }
