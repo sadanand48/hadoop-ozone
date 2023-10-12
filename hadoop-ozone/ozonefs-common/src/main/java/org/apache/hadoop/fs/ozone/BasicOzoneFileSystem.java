@@ -46,9 +46,6 @@ import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.conf.StorageUnit;
 import org.apache.hadoop.hdds.utils.LegacyHadoopConfigurationSource;
-import org.apache.hadoop.hdfs.protocol.ErasureCodingPolicy;
-import org.apache.hadoop.hdfs.protocol.SystemErasureCodingPolicies;
-import org.apache.hadoop.io.erasurecode.ECSchema;
 import org.apache.hadoop.ozone.OFSPath;
 import org.apache.hadoop.ozone.OzoneConfigKeys;
 import org.apache.hadoop.ozone.client.io.SelectorOutputStream;
@@ -1317,20 +1314,24 @@ public class BasicOzoneFileSystem extends FileSystem {
       int ecChunkSize = replicationConfig.getEcChunkSize();
       int data = replicationConfig.getData();
       int parity = replicationConfig.getParity();
-      ECSchema ecSchema = new ECSchema(ecCodec.name(),data,parity);
-      return new ErasureCodingPolicy(ecSchema,ecChunkSize).getName();
+      return composePolicyName(ecCodec.name(),data,parity,ecChunkSize);
     } catch (IOException e) {
       throw new RuntimeException(e);
     }
   }
 
-  public void setErasureCodingPolicy(Path path,
-      String ecPolicyName) throws IOException {
-    ErasureCodingPolicy ecPolicy =
-        SystemErasureCodingPolicies.getByName(ecPolicyName);
-    String ecRep = ecPolicy.getCodecName()
-        .toLowerCase() + "-" + ecPolicy.getNumDataUnits() + "-"
-        + ecPolicy.getNumParityUnits() + "-" + ecPolicy.getCellSize() + "k";
+  public static String composePolicyName(String codecName, int dataUnits,
+      int parityUnits, int cellSize) {
+    return codecName.toUpperCase() + "-" + dataUnits + "-" +
+        parityUnits + "-" + cellSize / 1024 + "k";
+  }
+
+  public void setErasureCodingPolicy(Path path, String ecCodecName,
+      int dataUnits, int parityUnits, int cellSize)
+      throws IOException {
+    String ecRep = ecCodecName
+        .toLowerCase() + "-" + dataUnits + "-" +
+        parityUnits + "-" + cellSize + "k";
     OFSPath ofsPath = new OFSPath(path.toString(), new OzoneConfiguration());
     adapterImpl.getOzoneClient().getObjectStore()
         .getVolume(ofsPath.getVolumeName())
