@@ -37,12 +37,14 @@ import org.apache.hadoop.fs.contract.ContractTestUtils;
 import org.apache.hadoop.fs.permission.FsPermission;
 import org.apache.hadoop.hdds.client.DefaultReplicationConfig;
 import org.apache.hadoop.hdds.client.ECReplicationConfig;
+import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationType;
 import org.apache.hadoop.hdds.client.StandaloneReplicationConfig;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.StorageType;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
+import org.apache.hadoop.hdds.scm.OzoneClientConfig;
 import org.apache.hadoop.hdds.utils.IOUtils;
 import org.apache.hadoop.hdfs.protocol.SnapshotDiffReport;
 import org.apache.hadoop.mapreduce.Job;
@@ -83,6 +85,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestInstance;
 import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.Arguments;
+import org.junit.jupiter.params.provider.MethodSource;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -107,6 +111,7 @@ import java.util.TreeSet;
 import java.util.UUID;
 import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 
 import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.FS_TRASH_CHECKPOINT_INTERVAL_KEY;
 import static org.apache.hadoop.fs.CommonConfigurationKeysPublic.FS_TRASH_INTERVAL_KEY;
@@ -333,18 +338,51 @@ abstract class AbstractRootedOzoneFileSystemTest {
     fs.delete(grandparent, true);
   }
 
-  @Test
-  public void testCreateKeyWithECReplicationConfig() throws Exception {
-    String testKeyName = "testKey";
-    Path testKeyPath = new Path(bucketPath, testKeyName);
-    createKeyWithECReplicationConfiguration(cluster.getConf(), testKeyPath);
-
-    OzoneKeyDetails key = getKey(testKeyPath, false);
-    assertEquals(HddsProtos.ReplicationType.EC,
-        key.getReplicationConfig().getReplicationType());
-    assertEquals("rs-3-2-1024k",
-        key.getReplicationConfig().getReplication());
+  private static Stream<Arguments> getParams(){
+    return Stream.of(
+        Arguments.of(1,512000,true),
+        Arguments.of(2,512000,true),
+        Arguments.of(3,512000,true),
+        Arguments.of(1,819200,false),
+        Arguments.of(2,819200,false),
+        Arguments.of(3,819200,false));
   }
+
+  @ParameterizedTest(name = "3MB multiple = {0} offset Bytes = {1}")
+  @MethodSource("getParams")
+  public void test32ECChecksum(int x, int offsetBytes,boolean shouldFail) throws Exception {
+    int threemb = 3145728;
+    int size = threemb*x + offsetBytes;// You can change the size as per your requirement
+
+    // Specify the byte value to fill the array with
+    byte value = 1;  // For example, filling with byte '1'
+
+    // Create the byte array of the given size
+    byte[] byteArray = new byte[size];
+
+    // Fill the byte array with the same value
+    Arrays.fill(byteArray, value);
+    OzoneVolume volume = client.getObjectStore().getVolume(volumeName);
+    OzoneBucket bucket = volume.getBucket(bucketName);
+    String keyName = "key" + RandomStringUtils.randomNumeric(5);
+    ReplicationConfig repConfig = new ECReplicationConfig(3,2);
+    try (OzoneOutputStream outputStream = bucket.createKey(keyName,size,repConfig,new HashMap<>())){
+      outputStream.write(byteArray);
+    }
+
+    if (shouldFail) {
+      assertThrows(IllegalArgumentException.class,
+          () -> OzoneClientUtils.getFileChecksumWithCombineMode(volume, bucket,
+              keyName, size, OzoneClientConfig.ChecksumCombineMode.COMPOSITE_CRC,
+              client.getProxy()));
+    } else {
+      OzoneClientUtils.getFileChecksumWithCombineMode(volume, bucket,
+          keyName, size, OzoneClientConfig.ChecksumCombineMode.COMPOSITE_CRC,
+          client.getProxy());
+    }
+  }
+
+
 
   @Test
   void testListStatusWithIntermediateDirWithECEnabled()
