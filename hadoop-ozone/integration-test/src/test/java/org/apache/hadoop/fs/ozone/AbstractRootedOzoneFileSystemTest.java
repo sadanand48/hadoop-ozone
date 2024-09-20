@@ -338,7 +338,24 @@ abstract class AbstractRootedOzoneFileSystemTest {
     fs.delete(grandparent, true);
   }
 
+  @Test
+  public void testCreateKeyWithECReplicationConfig() throws Exception {
+    String testKeyName = "testKey";
+    Path testKeyPath = new Path(bucketPath, testKeyName);
+    createKeyWithECReplicationConfiguration(cluster.getConf(), testKeyPath);
+
+    OzoneKeyDetails key = getKey(testKeyPath, false);
+    assertEquals(HddsProtos.ReplicationType.EC,
+        key.getReplicationConfig().getReplicationType());
+    assertEquals("rs-3-2-1024k",
+        key.getReplicationConfig().getReplication());
+  }
+
   private static Stream<Arguments> getParams(){
+    // 2 cases
+    // (x * 4 * 4 ) / (16 * 1024)  = 500 x = 512000
+
+    // (x * 4  * 4 ) / (16 * 1024) = 800 x = 819200
     return Stream.of(
         Arguments.of(1,512000,true),
         Arguments.of(2,512000,true),
@@ -350,17 +367,14 @@ abstract class AbstractRootedOzoneFileSystemTest {
 
   @ParameterizedTest(name = "3MB multiple = {0} offset Bytes = {1}")
   @MethodSource("getParams")
-  public void test32ECChecksum(int x, int offsetBytes,boolean shouldFail) throws Exception {
+  public void test32ECChecksum(int multiple, int offsetBytes,boolean shouldFail) throws Exception {
     int threemb = 3145728;
-    int size = threemb*x + offsetBytes;// You can change the size as per your requirement
+    int size = threemb* multiple + offsetBytes;// You can change the size as per your requirement
 
     // Specify the byte value to fill the array with
-    byte value = 1;  // For example, filling with byte '1'
+    byte value = 1;
 
-    // Create the byte array of the given size
     byte[] byteArray = new byte[size];
-
-    // Fill the byte array with the same value
     Arrays.fill(byteArray, value);
     OzoneVolume volume = client.getObjectStore().getVolume(volumeName);
     OzoneBucket bucket = volume.getBucket(bucketName);
@@ -381,8 +395,6 @@ abstract class AbstractRootedOzoneFileSystemTest {
           client.getProxy());
     }
   }
-
-
 
   @Test
   void testListStatusWithIntermediateDirWithECEnabled()
