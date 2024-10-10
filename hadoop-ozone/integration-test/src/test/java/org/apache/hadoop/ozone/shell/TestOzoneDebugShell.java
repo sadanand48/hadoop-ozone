@@ -26,10 +26,13 @@ import org.apache.hadoop.hdds.client.ReplicationConfig;
 import org.apache.hadoop.hdds.client.ReplicationFactor;
 import org.apache.hadoop.hdds.client.ReplicationType;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
+import org.apache.hadoop.hdds.protocol.DatanodeDetails;
 import org.apache.hadoop.hdds.scm.container.ContainerID;
 import org.apache.hadoop.hdds.scm.container.ContainerInfo;
 import org.apache.hadoop.hdds.scm.container.replication.ReplicationManager;
+import org.apache.hadoop.hdds.scm.pipeline.PipelineID;
 import org.apache.hadoop.hdds.utils.IOUtils;
+import org.apache.hadoop.ozone.HddsDatanodeService;
 import org.apache.hadoop.ozone.MiniOzoneCluster;
 import org.apache.hadoop.ozone.OzoneTestUtils;
 import org.apache.hadoop.ozone.TestDataUtil;
@@ -74,6 +77,7 @@ import static org.apache.hadoop.ozone.OzoneConsts.OM_SNAPSHOT_CHECKPOINT_DIR;
 import static org.apache.hadoop.ozone.OzoneConsts.OM_DB_NAME;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * Test Ozone Debug shell.
@@ -132,6 +136,45 @@ public class TestOzoneDebugShell {
 
     exitCode = runChunkInfoCommand(volumeName, bucketName, keyName);
     assertEquals(0, exitCode);
+  }
+
+  @Test
+  public void testChunkInfoOnAReplicaWithLowerBcsId() throws Exception {
+    final String volumeName = UUID.randomUUID().toString();
+    final String bucketName = UUID.randomUUID().toString();
+    final String keyName = UUID.randomUUID().toString();
+
+    writeKey(volumeName, bucketName, keyName, false);
+    closeContainerForKey(volumeName, bucketName, keyName);
+
+    long containerId = client.getObjectStore().getVolume(volumeName)
+        .getBucket(bucketName)
+        .getKey(keyName)
+        .getOzoneKeyLocations().get(0).getContainerID();
+
+    PipelineID pipelineID = cluster.getStorageContainerManager()
+        .getContainerManager()
+        .getContainer(ContainerID.valueOf(containerId))
+        .getPipelineID();
+
+    DatanodeDetails first = cluster.getStorageContainerManager()
+        .getPipelineManager()
+        .getPipeline(pipelineID)
+        .getNodes().get(0);
+
+    HddsDatanodeService dn = cluster.getHddsDatanodes().stream()
+        .filter(x -> x.getDatanodeDetails().equals(first)).findFirst().get();
+
+    dn.getDatanodeStateMachine().getContainer().getContainerSet()
+        .getContainer(containerId).updateBlockCommitSequenceId(1L);
+
+    try (GenericTestUtils.SystemOutCapturer capture = new GenericTestUtils
+        .SystemOutCapturer()) {
+      int exitCode = runChunkInfoCommand(volumeName, bucketName, keyName);
+      assertEquals(0, exitCode);
+      String sysOut = capture.getOutput();
+      assertTrue(sysOut.contains("\"files\" : [ ]"));
+    }
   }
 
   @Test
