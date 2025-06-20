@@ -541,4 +541,10 @@ public final class OzoneConsts {
    * Quota Units.
    */
   public enum Units { TB, GB, MB, KB, B }
+
+  /**
+   * A constant string used as a separator in various contexts within
+   * the OMDBCheckpoint functions.
+   */
+  public static final String SEPARATOR = "-";
 }
