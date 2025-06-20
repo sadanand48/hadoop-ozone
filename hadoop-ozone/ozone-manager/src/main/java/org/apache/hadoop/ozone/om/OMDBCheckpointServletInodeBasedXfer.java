@@ -259,7 +259,7 @@ public class OMDBCheckpointServletInodeBasedXfer extends DBCheckpointServlet {
               hardLinkFileMap, getSstBackupDir());
 
           // This is done to ensure all data to be copied correctly is flushed in the snapshot DB
-          for(Path snapshotDir : snapshotPaths) {
+          for (Path snapshotDir : snapshotPaths) {
             String snapshotId = OmSnapshotManager.extractSnapshotIDFromCheckpointDirName(snapshotDir.toString());
             omMetadataManager.getLock().acquireReadLock(SNAPSHOT_DB_LOCK, snapshotId);
             // invalidate closes the snapshot DB

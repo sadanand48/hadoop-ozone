@@ -282,11 +282,11 @@ public class TestOMDbCheckpointServletInodeBasedXfer {
     AtomicReference<DBCheckpoint> realCheckpoint = new AtomicReference<>();
     setupClusterAndMocks(volumeName, bucketName, realCheckpoint);
     List<OzoneSnapshot> snapshots = new ArrayList<>();
-    client.getObjectStore().listSnapshot(volumeName,
-        bucketName,"",null).forEachRemaining(snapshots::add);
+    client.getObjectStore().listSnapshot(volumeName, bucketName, "", null)
+        .forEachRemaining(snapshots::add);
     OzoneSnapshot snapshotToModify = snapshots.get(0);
     String dummyKey = "dummyKey";
-    writeDummyKeyToDeleteTableOfSnapshotDB(snapshotToModify, bucketName, volumeName, dummyKey );
+    writeDummyKeyToDeleteTableOfSnapshotDB(snapshotToModify, bucketName, volumeName, dummyKey);
     // Get the tarball.
     omDbCheckpointServletMock.doGet(requestMock, responseMock);
     String testDirName = folder.resolve("testDir").toString();
@@ -318,7 +318,7 @@ public class TestOMDbCheckpointServletInodeBasedXfer {
     }
   }
 
-  private static Set<Path> getAllPathsInTarball(File newDbDir) throws IOException{
+  private static Set<Path> getAllPathsInTarball(File newDbDir) throws IOException {
     Set<Path> allPathsInTarball = new HashSet<>();
     try (Stream<Path> filesInTarball = Files.list(newDbDir.toPath())) {
       List<Path> files = filesInTarball.collect(Collectors.toList());
@@ -348,7 +348,8 @@ public class TestOMDbCheckpointServletInodeBasedXfer {
     }
   }
 
-  private void setupClusterAndMocks(String volumeName, String bucketName,AtomicReference<DBCheckpoint> realCheckpoint) throws Exception {
+  private void setupClusterAndMocks(String volumeName, String bucketName,
+      AtomicReference<DBCheckpoint> realCheckpoint) throws Exception {
     setupCluster();
     setupMocks();
     om.getKeyManager().getSnapshotSstFilteringService().pause();
