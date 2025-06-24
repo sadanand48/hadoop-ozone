@@ -30,7 +30,7 @@ on:
         required: false
       submodule:
         description: Submodule
-        default: 'ozone-integration-test'
+        default: 'AUTO'
         required: true
       iterations:
         description: Number of Iterations per split
@@ -94,11 +94,57 @@ jobs:
     with:
       repo: ${{ github.event.inputs.ratis-repo || format('{0}/ratis', github.repository_owner) }}
       ref: ${{ github.event.inputs.ratis-ref }}
+  find-tests:
+    if: ${{ always() && github.event.inputs.submodule == 'AUTO' }}
+    needs:
+      - prepare-job
+    runs-on: ubuntu-24.04
+    outputs:
+      modules: ${{ steps.modules.outputs.modules }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.ref }}
+      - name: Cache for maven dependencies
+        uses: actions/cache/restore@v4
+        with:
+          path: |
+            ~/.m2/repository/*/*/*
+            !~/.m2/repository/org/apache/ozone
+          key: maven-repo-${{ hashFiles('**/pom.xml') }}
+          restore-keys: |
+            maven-repo-
+      - name: Setup java
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: ${{ github.event.inputs.java-version }}
+      - name: Find tests
+        id: modules
+        run: |
+          # find the path of the test file
+          FOUND_FILE=$(find . -type f -name "${TEST_CLASS}.java")
+          if [[ -z "$FOUND_FILE" ]]; then
+            echo "No test file named ${TEST_CLASS}.java found"
+            exit 1
+          fi
+          ABS_PATH=$(realpath "$FOUND_FILE")
+          DIR=$(dirname "$ABS_PATH")
+          while [[ "$DIR" != "/" ]]; do
+            if [[ -f "$DIR/pom.xml" ]]; then
+              MODULE_NAME=$(mvn -f "$DIR/pom.xml" help:evaluate -Dexpression=project.artifactId -q -DforceStdout 2>/dev/null)
+              break
+            fi
+          DIR=$(dirname "$DIR")
+          done
+          echo "modules=$MODULE_NAME" >> $GITHUB_OUTPUT
+        if: ${{ !cancelled() }}
   build:
     if: ${{ always() }}
     needs:
       - prepare-job
       - ratis
+      - find-tests
     runs-on: ubuntu-24.04
     timeout-minutes: 60
     steps:
@@ -138,7 +184,11 @@ jobs:
             args="$args -Dgrpc.protobuf-compile.version=${{ needs.ratis.outputs.protobuf-version }}"
           fi
 
-          args="$args -am -pl :${{ github.event.inputs.submodule }}"
+          if [[ "${{ github.event.inputs.submodule }}" != "AUTO" ]]; then
+            args="$args -am -pl :${{ github.event.inputs.submodule }}"
+          elif [[ -n "${{ needs.find-tests.outputs.modules }}" ]]; then
+            args="$args -am -pl :${{ needs.find-tests.outputs.modules }}"
+          fi
 
           hadoop-ozone/dev-support/checks/build.sh $args
       - name: Store Maven repo for tests
@@ -154,6 +204,7 @@ jobs:
       - prepare-job
       - ratis
       - build
+      - find-tests
     name: Run-Split
     runs-on: ubuntu-24.04
     strategy:
@@ -208,7 +259,11 @@ jobs:
             args="$args -Dgrpc.protobuf-compile.version=${{ needs.ratis.outputs.protobuf-version }}"
           fi
 
-          args="$args -pl :${{ github.event.inputs.submodule }}"
+          if [[ "${{ github.event.inputs.submodule }}" != "AUTO" ]]; then
+            args="$args -pl :${{ github.event.inputs.submodule }}"
+          elif [[ -n "${{ needs.find-tests.outputs.modules }}" ]]; then
+            args="$args -pl ${{ needs.find-tests.outputs.modules }}"
+          fi
 
           if [ "$TEST_METHOD" = "ALL" ]; then
             echo "Running all tests from $TEST_CLASS"
