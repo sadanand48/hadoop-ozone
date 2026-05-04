@@ -65,6 +65,8 @@ public class SafeModeMetrics {
   private MutableGaugeLong lastRatisContainerSafeModeRuleRefreshDurationMs;
   @Metric("Duration (ms) of the last EC container safe mode rule incremental refresh")
   private MutableGaugeLong lastEcContainerSafeModeRuleRefreshDurationMs;
+  @Metric("Number of refresh calls before exiting safemode")
+  private MutableCounterLong numContainerSafeModeRuleRefreshes;
 
   public static SafeModeMetrics create() {
     final MetricsSystem ms = DefaultMetricsSystem.instance();
@@ -114,6 +116,10 @@ public class SafeModeMetrics {
 
   public void incCurrentContainersWithECDataReplicaReportedCount() {
     this.currentContainersWithECDataReplicaReportedCount.incr();
+  }
+
+  public void incNumContainerSafeModeRuleRefreshes() {
+    this.numContainerSafeModeRuleRefreshes.incr();
   }
 
   public void incCurrentRegisteredDatanodesCount() {
@@ -166,7 +172,11 @@ public class SafeModeMetrics {
   MutableCounterLong getCurrentContainersWithOneReplicaReportedCount() {
     return currentContainersWithOneReplicaReportedCount;
   }
-  
+
+  public MutableCounterLong getNumContainerSafeModeRuleRefreshes() {
+    return numContainerSafeModeRuleRefreshes;
+  }
+
   MutableCounterLong getCurrentRegisteredDatanodesCount() {
     return currentRegisteredDatanodesCount;
   }

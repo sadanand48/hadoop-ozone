@@ -139,6 +139,7 @@ public abstract class AbstractContainerSafeModeRule extends SafeModeExitRule<Nod
   public synchronized void refresh(boolean forceRefresh) {
     if (forceRefresh || !validate()) {
       final long startNanos = Time.monotonicNowNanos();
+      getSafeModeMetrics().incNumContainerSafeModeRuleRefreshes();
       try {
         initializeRule();
       } finally {
