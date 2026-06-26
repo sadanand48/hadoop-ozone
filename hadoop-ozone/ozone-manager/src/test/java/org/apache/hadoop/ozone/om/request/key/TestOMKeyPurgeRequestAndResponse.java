@@ -18,6 +18,7 @@
 package org.apache.hadoop.ozone.om.request.key;
 
 import static org.apache.hadoop.ozone.om.lock.DAGLeveledResource.SNAPSHOT_DB_CONTENT_LOCK;
+import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
@@ -37,6 +38,7 @@ import java.util.UUID;
 import java.util.concurrent.CompletableFuture;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
+import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.utils.TransactionInfo;
 import org.apache.hadoop.hdds.utils.db.BatchOperation;
@@ -46,6 +48,8 @@ import org.apache.hadoop.ozone.om.helpers.SnapshotInfo;
 import org.apache.hadoop.ozone.om.lock.IOzoneManagerLock;
 import org.apache.hadoop.ozone.om.request.OMRequestTestUtils;
 import org.apache.hadoop.ozone.om.response.key.OMKeyPurgeResponse;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.BucketNameInfo;
+import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.BucketPurgeKeysSize;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.DeletedKeys;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMResponse;
@@ -105,6 +109,11 @@ public class TestOMKeyPurgeRequestAndResponse extends TestOMKeyRequest {
    */
   private OMRequest createPurgeKeysRequest(List<String> deletedKeys, List<String> renamedEntries,
        String snapshotDbKey) {
+    return createPurgeKeysRequest(deletedKeys, renamedEntries, snapshotDbKey, null);
+  }
+
+  private OMRequest createPurgeKeysRequest(List<String> deletedKeys, List<String> renamedEntries,
+       String snapshotDbKey, List<BucketPurgeKeysSize> bucketPurgeKeysSizes) {
     DeletedKeys deletedKeysInBucket = DeletedKeys.newBuilder()
         .setVolumeName(volumeName)
         .setBucketName(bucketName)
@@ -115,6 +124,9 @@ public class TestOMKeyPurgeRequestAndResponse extends TestOMKeyRequest {
 
     if (snapshotDbKey != null) {
       purgeKeysRequest.setSnapshotTableKey(snapshotDbKey);
+    }
+    if (bucketPurgeKeysSizes != null) {
+      purgeKeysRequest.addAllBucketPurgeKeysSize(bucketPurgeKeysSizes);
     }
     purgeKeysRequest.build();
 
@@ -290,5 +302,47 @@ public class TestOMKeyPurgeRequestAndResponse extends TestOMKeyRequest {
 
     omSnapshot = null;
     rcOmSnapshot.close();
+  }
+
+  @Test
+  public void testTrappedDeletedKeyCountersDecrementedOnSnapshotPurge() throws Exception {
+    OzoneConfiguration conf = (OzoneConfiguration) ozoneManager.getConfiguration();
+    conf.setBoolean(OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED, true);
+    when(ozoneManager.getDefaultReplicationConfig())
+        .thenReturn(RatisReplicationConfig.getInstance(HddsProtos.ReplicationFactor.THREE));
+
+    int keysInTest = 3;
+    numKeys = keysInTest;
+    Pair<List<String>, List<String>> deleteKeysAndRenamedEntry =
+        createAndDeleteKeysAndRenamedEntry(1, null);
+    OmBucketInfo omBucketInfo = omMetadataManager.getBucketTable().get(
+        omMetadataManager.getBucketKey(volumeName, bucketName));
+    SnapshotInfo snapInfo = createSnapshot("snap-trapped-purge");
+    assertEquals(keysInTest * 1000L, snapInfo.getTrappedKeyBytes());
+    assertEquals(keysInTest, snapInfo.getTrappedKeyNamespace());
+
+    BucketPurgeKeysSize purgeSize = BucketPurgeKeysSize.newBuilder()
+        .setBucketNameInfo(BucketNameInfo.newBuilder()
+            .setVolumeName(volumeName)
+            .setBucketName(bucketName)
+            .setBucketId(omBucketInfo.getObjectID()))
+        .setPurgedBytes(1000L)
+        .setPurgedNamespace(1L)
+        .build();
+
+    OMRequest omRequest = createPurgeKeysRequest(
+        Collections.singletonList(deleteKeysAndRenamedEntry.getKey().get(0)),
+        Collections.emptyList(),
+        snapInfo.getTableKey(),
+        Collections.singletonList(purgeSize));
+
+    OMKeyPurgeRequest omKeyPurgeRequest =
+        new OMKeyPurgeRequest(preExecute(omRequest));
+    omKeyPurgeRequest.validateAndUpdateCache(ozoneManager, 100L);
+
+    SnapshotInfo updatedSnapshotInfo =
+        omMetadataManager.getSnapshotInfoTable().get(snapInfo.getTableKey());
+    assertEquals((keysInTest - 1) * 1000L, updatedSnapshotInfo.getTrappedKeyBytes());
+    assertEquals(keysInTest - 1, updatedSnapshotInfo.getTrappedKeyNamespace());
   }
 }
