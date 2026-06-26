@@ -384,7 +384,7 @@ public final class SnapshotInfo implements Auditable, CopyObject<SnapshotInfo> {
       return this;
     }
 
-    /** @param trappedKeyBytes - Trapped deleted key bytes for this snapshot. */
+    /** @param trappedKeyBytes - Trapped deleted key replicated bytes for this snapshot. */
     public Builder setTrappedKeyBytes(long trappedKeyBytes) {
       this.trappedKeyBytes = trappedKeyBytes;
       return this;

@@ -699,6 +699,14 @@ public final class OMConfigKeys {
       "ozone.om.snapshot.local.data.manager.service.interval";
   public static final String OZONE_OM_SNAPSHOT_LOCAL_DATA_MANAGER_SERVICE_INTERVAL_DEFAULT = "5m";
 
+  /**
+   * When enabled, snapshot create accounts deleted keys and directory roots moved
+   * into the snapshot checkpoint in per-snapshot trapped counters.
+   */
+  public static final String OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED =
+      "ozone.om.snapshot.trapped.accounting.enabled";
+  public static final boolean OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED_DEFAULT = false;
+
   public static final String OZONE_OM_RATIS_EVENTS_MAX_LIMIT =
       "ozone.om.ratis.events.max.limit";
   public static final int OZONE_OM_RATIS_EVENTS_MAX_LIMIT_DEFAULT = 100;

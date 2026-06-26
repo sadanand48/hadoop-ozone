@@ -45,6 +45,8 @@ import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_SNAPSHOT_DIFF_CLE
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_SNAPSHOT_DIFF_DB_DIR;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_SNAPSHOT_DIFF_REPORT_MAX_PAGE_SIZE;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_SNAPSHOT_DIFF_REPORT_MAX_PAGE_SIZE_DEFAULT;
+import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED;
+import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED_DEFAULT;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_SNAPSHOT_CHECKPOINT_DIR_CREATION_POLL_TIMEOUT;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_SNAPSHOT_CHECKPOINT_DIR_CREATION_POLL_TIMEOUT_DEFAULT;
 import static org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes.FILE_NOT_FOUND;
@@ -81,6 +83,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hdds.StringUtils;
+import org.apache.hadoop.hdds.conf.ConfigurationSource;
 import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.ratis.RatisHelper;
 import org.apache.hadoop.hdds.server.ServerUtils;
@@ -92,11 +95,14 @@ import org.apache.hadoop.hdds.utils.db.RDBStore;
 import org.apache.hadoop.hdds.utils.db.RocksDBCheckpoint;
 import org.apache.hadoop.hdds.utils.db.RocksDatabase;
 import org.apache.hadoop.hdds.utils.db.Table;
+import org.apache.hadoop.hdds.utils.db.Table.KeyValue;
 import org.apache.hadoop.hdds.utils.db.TableIterator;
 import org.apache.hadoop.hdds.utils.db.managed.ManagedColumnFamilyOptions;
 import org.apache.hadoop.hdds.utils.db.managed.ManagedDBOptions;
 import org.apache.hadoop.hdds.utils.db.managed.ManagedRocksDB;
 import org.apache.hadoop.ozone.om.exceptions.OMException;
+import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
+import org.apache.hadoop.ozone.om.helpers.RepeatedOmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.SnapshotDiffJob;
 import org.apache.hadoop.ozone.om.helpers.SnapshotInfo;
 import org.apache.hadoop.ozone.om.lock.OMLockDetails;
@@ -564,6 +570,9 @@ public final class OmSnapshotManager implements AutoCloseable {
           (RDBStore) checkpointMetadataManager.getStore(), snapshotInfo);
     }
 
+    accountTrappedDeletedDataOnSnapshotCreate(omMetadataManager, snapshotInfo,
+        configuration, batchOperation);
+
     // Clean up active DB's deletedTable right after checkpoint is taken,
     // Snapshot create is processed as a single transaction and
     // transactions are flushed sequentially so, no need to take any lock as of now.
@@ -584,6 +593,72 @@ public final class OmSnapshotManager implements AutoCloseable {
     }
 
     return dbCheckpoint;
+  }
+
+  /**
+   * Sums deleted keys and counts deleted directory roots in the active OM DB for
+   * the snapshot bucket, then stores the totals on {@code snapshotInfo}.
+   * Key bytes use replicated size from {@code RepeatedOmKeyInfo#getTotalSize}
+   * to match {@code bucket.snapshotUsedBytes} and KDS purge decrements.
+   * <p>
+   * Must run after the checkpoint is taken and before bucket-prefix rows are
+   * stripped from the active {@code deletedTable} / {@code deletedDirTable}.
+   * The {@code SnapshotInfo} row is re-written in the same batch because table
+   * values are encoded at {@code putWithBatch} time.
+   */
+  @VisibleForTesting
+  static void accountTrappedDeletedDataOnSnapshotCreate(
+      OMMetadataManager omMetadataManager,
+      SnapshotInfo snapshotInfo,
+      ConfigurationSource configuration,
+      BatchOperation batchOperation) throws IOException {
+    if (!configuration.getBoolean(OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED,
+        OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED_DEFAULT)) {
+      return;
+    }
+
+    String volume = snapshotInfo.getVolumeName();
+    String bucket = snapshotInfo.getBucketName();
+
+    long trappedKeyBytes = 0L;
+    long trappedKeyNamespace = 0L;
+    Table<String, RepeatedOmKeyInfo> deletedTable = omMetadataManager.getDeletedTable();
+    String deletedTablePrefix = omMetadataManager.getTableBucketPrefix(
+        deletedTable.getName(), volume, bucket);
+    try (TableIterator<String, ? extends KeyValue<String, RepeatedOmKeyInfo>> itr =
+        deletedTable.iterator(deletedTablePrefix)) {
+      while (itr.hasNext()) {
+        RepeatedOmKeyInfo repeatedOmKeyInfo = itr.next().getValue();
+        trappedKeyBytes += repeatedOmKeyInfo.getTotalSize().getRight();
+        trappedKeyNamespace += repeatedOmKeyInfo.getOmKeyInfoList().size();
+      }
+    }
+
+    long trappedDirNamespace = 0L;
+    Table<String, OmKeyInfo> deletedDirTable = omMetadataManager.getDeletedDirTable();
+    String deletedDirPrefix = omMetadataManager.getTableBucketPrefix(
+        deletedDirTable.getName(), volume, bucket);
+    try (TableIterator<String, ? extends KeyValue<String, OmKeyInfo>> itr =
+        deletedDirTable.iterator(deletedDirPrefix)) {
+      while (itr.hasNext()) {
+        itr.next();
+        trappedDirNamespace++;
+      }
+    }
+
+    snapshotInfo.setTrappedKeyBytes(trappedKeyBytes);
+    snapshotInfo.setTrappedKeyNamespace(trappedKeyNamespace);
+    snapshotInfo.setTrappedDirNamespace(trappedDirNamespace);
+
+    omMetadataManager.getSnapshotInfoTable().putWithBatch(batchOperation,
+        snapshotInfo.getTableKey(), snapshotInfo);
+
+    if (trappedKeyBytes > 0 || trappedKeyNamespace > 0 || trappedDirNamespace > 0) {
+      LOG.info("Snapshot {} trapped deleted accounting: trappedKeyBytes={}, "
+              + "trappedKeyNamespace={}, trappedDirNamespace={}",
+          snapshotInfo.getTableKey(), trappedKeyBytes, trappedKeyNamespace,
+          trappedDirNamespace);
+    }
   }
 
   /**

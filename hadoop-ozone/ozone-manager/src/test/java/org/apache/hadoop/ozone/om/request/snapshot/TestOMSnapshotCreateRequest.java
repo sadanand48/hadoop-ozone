@@ -19,6 +19,7 @@ package org.apache.hadoop.ozone.om.request.snapshot;
 
 import static org.apache.hadoop.hdds.protocol.proto.HddsProtos.ReplicationFactor.THREE;
 import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_FS_SNAPSHOT_MAX_LIMIT;
+import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED;
 import static org.apache.hadoop.ozone.om.helpers.SnapshotInfo.getFromProtobuf;
 import static org.apache.hadoop.ozone.om.helpers.SnapshotInfo.getTableKey;
 import static org.apache.hadoop.ozone.om.request.OMRequestTestUtils.createSnapshotRequest;
@@ -36,6 +37,7 @@ import java.io.IOException;
 import java.util.UUID;
 import org.apache.commons.lang3.tuple.Pair;
 import org.apache.hadoop.hdds.client.RatisReplicationConfig;
+import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.utils.TransactionInfo;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.hdds.utils.db.TableIterator;
@@ -383,6 +385,64 @@ public class TestOMSnapshotCreateRequest extends TestSnapshotRequestAndResponse 
     OMRequest snapshotRequest4 = createSnapshotRequest(getVolumeName(), getBucketName(), snapshotName4);
     omException = assertThrows(OMException.class, () -> doPreExecute(snapshotRequest4));
     assertEquals(OMException.ResultCodes.TOO_MANY_SNAPSHOTS, omException.getResult());
+  }
+
+  @Test
+  public void testTrappedDeletedKeyAccountingOnSnapshotCreate() throws Exception {
+    when(getOzoneManager().isAdmin(any())).thenReturn(true);
+    enableTrappedDeletedAccounting();
+
+    String bucketName = getBucketName();
+    String volumeName = getVolumeName();
+    OmBucketInfo bucketInfo = getOmMetadataManager().getBucketTable().get(
+        getOmMetadataManager().getBucketKey(volumeName, bucketName));
+
+    OmKeyInfo key1 = addKeyInBucket(volumeName, bucketName, "key1", 100L);
+    OmKeyInfo key2 = addKeyInBucket(volumeName, bucketName, "key2", 200L);
+    deleteKey(key1, bucketInfo.getObjectID());
+    deleteKey(key2, bucketInfo.getObjectID());
+
+    createSnapshot(snapshotName1);
+
+    SnapshotInfo snapshotInfo = getSnapshotInfo(volumeName, bucketName, snapshotName1);
+    assertEquals(6000L, snapshotInfo.getTrappedKeyBytes());
+    assertEquals(2L, snapshotInfo.getTrappedKeyNamespace());
+    assertEquals(0L, snapshotInfo.getTrappedDirNamespace());
+  }
+
+  @Test
+  public void testTrappedDeletedDirAccountingOnSnapshotCreate() throws Exception {
+    when(getOzoneManager().isAdmin(any())).thenReturn(true);
+    enableTrappedDeletedAccounting();
+
+    String bucketName = getBucketName();
+    String volumeName = getVolumeName();
+    OmKeyInfo dir1 = addKeyInBucket(volumeName, bucketName, "dir1", 100L);
+    OmKeyInfo dir2 = addKeyInBucket(volumeName, bucketName, "dir2", 200L);
+    deleteDirectory(dir1);
+    deleteDirectory(dir2);
+
+    createSnapshot(snapshotName1);
+
+    SnapshotInfo snapshotInfo = getSnapshotInfo(volumeName, bucketName, snapshotName1);
+    assertEquals(0L, snapshotInfo.getTrappedKeyBytes());
+    assertEquals(0L, snapshotInfo.getTrappedKeyNamespace());
+    assertEquals(2L, snapshotInfo.getTrappedDirNamespace());
+  }
+
+  private void enableTrappedDeletedAccounting() {
+    OzoneConfiguration configuration =
+        (OzoneConfiguration) getOzoneManager().getConfiguration();
+    configuration.setBoolean(OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED, true);
+  }
+
+  private SnapshotInfo getSnapshotInfo(String volumeName, String bucketName,
+      String snapshotName) throws IOException {
+    SnapshotInfo snapshotInfo =
+        getOmMetadataManager().getSnapshotInfoTable().get(
+            getTableKey(volumeName, bucketName, snapshotName));
+    assertNotNull(snapshotInfo);
+    return snapshotInfo;
   }
 
   @Test

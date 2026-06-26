@@ -58,7 +58,7 @@ public class OzoneSnapshot {
    * @param referencedReplicatedSize Snapshot referenced size after replication.
    * @param exclusiveSize  Snapshot exclusive size.
    * @param exclusiveReplicatedSize  Snapshot exclusive size after replication.
-   * @param trappedKeyBytes Trapped deleted key bytes for this snapshot.
+   * @param trappedKeyBytes Trapped deleted key replicated bytes for this snapshot.
    * @param trappedKeyNamespace Trapped deleted key namespace for this snapshot.
    * @param trappedDirNamespace Trapped deleted directory root namespace for this snapshot.
    */
@@ -196,7 +196,7 @@ public class OzoneSnapshot {
   }
 
   /**
-   * @return Trapped deleted key bytes attributed to this snapshot.
+   * @return Trapped deleted key replicated bytes attributed to this snapshot.
    */
   public long getTrappedKeyBytes() {
     return trappedKeyBytes;

@@ -935,7 +935,7 @@ message SnapshotInfo {
   // snapshot exclusive size after replication
   optional uint64 exclusiveReplicatedSizeDeltaFromDirDeepCleaning = 22;
   optional bytes createTransactionInfo = 23;
-  // Logical size of deleted keys trapped due to this snapshot (unreplicated).
+  // Replicated size of deleted keys trapped due to this snapshot.
   optional uint64 trappedKeyBytes = 24;
   // Namespace count of deleted keys trapped due to this snapshot.
   optional uint64 trappedKeyNamespace = 25;
