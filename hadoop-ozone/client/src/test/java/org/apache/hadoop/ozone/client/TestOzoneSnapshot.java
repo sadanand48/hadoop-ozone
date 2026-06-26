@@ -48,6 +48,9 @@ public class TestOzoneSnapshot {
     when(snapshotInfo.getExclusiveReplicatedSize()).thenReturn(12000L);
     when(snapshotInfo.getExclusiveSizeDeltaFromDirDeepCleaning()).thenReturn(2000L);
     when(snapshotInfo.getExclusiveReplicatedSizeDeltaFromDirDeepCleaning()).thenReturn(6000L);
+    when(snapshotInfo.getTrappedKeyBytes()).thenReturn(5000L);
+    when(snapshotInfo.getTrappedKeyNamespace()).thenReturn(3L);
+    when(snapshotInfo.getTrappedDirNamespace()).thenReturn(1L);
     return snapshotInfo;
   }
 
@@ -58,7 +61,8 @@ public class TestOzoneSnapshot {
     OzoneSnapshot ozoneSnapshot = OzoneSnapshot.fromSnapshotInfo(snapshotInfo);
     OzoneSnapshot expectedOzoneSnapshot = new OzoneSnapshot(
         "volume", "bucket", "snap", 1000L, SNAPSHOT_ACTIVE, snapshotId,
-        "volume/bucket", "checkpointDir", 1000L, 3000L, 6000L, 18000L);
+        "volume/bucket", "checkpointDir", 1000L, 3000L, 6000L, 18000L,
+        5000L, 3L, 1L);
     assertEquals(expectedOzoneSnapshot, ozoneSnapshot);
   }
 }

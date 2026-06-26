@@ -67,6 +67,24 @@ public class TestOmSnapshotInfo {
         .setExclusiveReplicatedSize(3000L)
         .setExclusiveReplicatedSizeDeltaFromDirDeepCleaning(6000L)
         .setDeepCleanedDeletedDir(false)
+        .setTrappedKeyBytes(5000L)
+        .setTrappedKeyNamespace(3L)
+        .setTrappedDirNamespace(1L)
+        .build();
+  }
+
+  private SnapshotInfo createDefaultSnapshotInfo() {
+    return new SnapshotInfo.Builder()
+        .setSnapshotId(SNAPSHOT_ID)
+        .setName(NAME)
+        .setVolumeName(VOLUME_NAME)
+        .setBucketName(BUCKET_NAME)
+        .setSnapshotStatus(SNAPSHOT_STATUS)
+        .setCreationTime(CREATION_TIME)
+        .setDeletionTime(DELETION_TIME)
+        .setPathPreviousSnapshotId(PATH_PREVIOUS_SNAPSHOT_ID)
+        .setGlobalPreviousSnapshotId(GLOBAL_PREVIOUS_SNAPSHOT_ID)
+        .setSnapshotPath(SNAPSHOT_PATH)
         .build();
   }
 
@@ -91,7 +109,18 @@ public class TestOmSnapshotInfo {
         .setExclusiveSizeDeltaFromDirDeepCleaning(2000L)
         .setExclusiveReplicatedSizeDeltaFromDirDeepCleaning(6000L)
         .setDeepCleanedDeletedDir(false)
+        .setTrappedKeyBytes(5000L)
+        .setTrappedKeyNamespace(3L)
+        .setTrappedDirNamespace(1L)
         .build();
+  }
+
+  @Test
+  public void testTrappedFieldsDefaultToZero() {
+    SnapshotInfo snapshotInfo = createDefaultSnapshotInfo();
+    assertEquals(0L, snapshotInfo.getTrappedKeyBytes());
+    assertEquals(0L, snapshotInfo.getTrappedKeyNamespace());
+    assertEquals(0L, snapshotInfo.getTrappedDirNamespace());
   }
 
   @Test
@@ -139,6 +168,12 @@ public class TestOmSnapshotInfo {
     assertEquals(
         snapshotInfoEntryExpected.getDeepCleanedDeletedDir(),
         snapshotInfoEntryActual.getDeepCleanedDeletedDir());
+    assertEquals(snapshotInfoEntryExpected.getTrappedKeyBytes(),
+        snapshotInfoEntryActual.getTrappedKeyBytes());
+    assertEquals(snapshotInfoEntryExpected.getTrappedKeyNamespace(),
+        snapshotInfoEntryActual.getTrappedKeyNamespace());
+    assertEquals(snapshotInfoEntryExpected.getTrappedDirNamespace(),
+        snapshotInfoEntryActual.getTrappedDirNamespace());
 
     assertEquals(snapshotInfoEntryExpected, snapshotInfoEntryActual);
   }
@@ -179,6 +214,12 @@ public class TestOmSnapshotInfo {
         snapshotInfoActual.getExclusiveSizeDeltaFromDirDeepCleaning());
     assertEquals(snapshotInfoExpected.getExclusiveReplicatedSizeDeltaFromDirDeepCleaning(),
         snapshotInfoActual.getExclusiveReplicatedSizeDeltaFromDirDeepCleaning());
+    assertEquals(snapshotInfoExpected.getTrappedKeyBytes(),
+        snapshotInfoActual.getTrappedKeyBytes());
+    assertEquals(snapshotInfoExpected.getTrappedKeyNamespace(),
+        snapshotInfoActual.getTrappedKeyNamespace());
+    assertEquals(snapshotInfoExpected.getTrappedDirNamespace(),
+        snapshotInfoActual.getTrappedDirNamespace());
     assertEquals(snapshotInfoExpected, snapshotInfoActual);
   }
 

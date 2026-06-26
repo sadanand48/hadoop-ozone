@@ -39,6 +39,9 @@ public class OzoneSnapshot {
   private final long referencedReplicatedSize;
   private final long exclusiveSize;
   private final long exclusiveReplicatedSize;
+  private final long trappedKeyBytes;
+  private final long trappedKeyNamespace;
+  private final long trappedDirNamespace;
 
   /**
    * Constructs OzoneSnapshot from SnapshotInfo.
@@ -55,6 +58,9 @@ public class OzoneSnapshot {
    * @param referencedReplicatedSize Snapshot referenced size after replication.
    * @param exclusiveSize  Snapshot exclusive size.
    * @param exclusiveReplicatedSize  Snapshot exclusive size after replication.
+   * @param trappedKeyBytes Trapped deleted key bytes for this snapshot.
+   * @param trappedKeyNamespace Trapped deleted key namespace for this snapshot.
+   * @param trappedDirNamespace Trapped deleted directory root namespace for this snapshot.
    */
   @SuppressWarnings("parameternumber")
   public OzoneSnapshot(String volumeName,
@@ -68,7 +74,10 @@ public class OzoneSnapshot {
                        long referencedSize,
                        long referencedReplicatedSize,
                        long exclusiveSize,
-                       long exclusiveReplicatedSize) {
+                       long exclusiveReplicatedSize,
+                       long trappedKeyBytes,
+                       long trappedKeyNamespace,
+                       long trappedDirNamespace) {
     this.volumeName = volumeName;
     this.bucketName = bucketName;
     this.name = name;
@@ -81,6 +90,9 @@ public class OzoneSnapshot {
     this.referencedReplicatedSize = referencedReplicatedSize;
     this.exclusiveSize = exclusiveSize;
     this.exclusiveReplicatedSize = exclusiveReplicatedSize;
+    this.trappedKeyBytes = trappedKeyBytes;
+    this.trappedKeyNamespace = trappedKeyNamespace;
+    this.trappedDirNamespace = trappedDirNamespace;
   }
 
   /**
@@ -183,6 +195,27 @@ public class OzoneSnapshot {
     return exclusiveReplicatedSize;
   }
 
+  /**
+   * @return Trapped deleted key bytes attributed to this snapshot.
+   */
+  public long getTrappedKeyBytes() {
+    return trappedKeyBytes;
+  }
+
+  /**
+   * @return Trapped deleted key namespace attributed to this snapshot.
+   */
+  public long getTrappedKeyNamespace() {
+    return trappedKeyNamespace;
+  }
+
+  /**
+   * @return Trapped deleted directory root namespace for this snapshot.
+   */
+  public long getTrappedDirNamespace() {
+    return trappedDirNamespace;
+  }
+
   public static OzoneSnapshot fromSnapshotInfo(SnapshotInfo snapshotInfo) {
     return new OzoneSnapshot(
         snapshotInfo.getVolumeName(),
@@ -196,7 +229,10 @@ public class OzoneSnapshot {
         snapshotInfo.getReferencedSize(),
         snapshotInfo.getReferencedReplicatedSize(),
         snapshotInfo.getExclusiveSize() + snapshotInfo.getExclusiveSizeDeltaFromDirDeepCleaning(),
-        snapshotInfo.getExclusiveReplicatedSize() + snapshotInfo.getExclusiveReplicatedSizeDeltaFromDirDeepCleaning()
+        snapshotInfo.getExclusiveReplicatedSize() + snapshotInfo.getExclusiveReplicatedSizeDeltaFromDirDeepCleaning(),
+        snapshotInfo.getTrappedKeyBytes(),
+        snapshotInfo.getTrappedKeyNamespace(),
+        snapshotInfo.getTrappedDirNamespace()
     );
   }
 
@@ -210,6 +246,8 @@ public class OzoneSnapshot {
     return creationTime == that.creationTime && referencedSize == that.referencedSize &&
         referencedReplicatedSize == that.referencedReplicatedSize && exclusiveSize == that.exclusiveSize &&
         exclusiveReplicatedSize == that.exclusiveReplicatedSize &&
+        trappedKeyBytes == that.trappedKeyBytes && trappedKeyNamespace == that.trappedKeyNamespace &&
+        trappedDirNamespace == that.trappedDirNamespace &&
         Objects.equals(volumeName, that.volumeName) && Objects.equals(bucketName, that.bucketName) &&
         Objects.equals(name, that.name) && snapshotStatus == that.snapshotStatus &&
         Objects.equals(snapshotId, that.snapshotId) &&
@@ -220,7 +258,8 @@ public class OzoneSnapshot {
   @Override
   public int hashCode() {
     return Objects.hash(volumeName, bucketName, name, creationTime, snapshotStatus, snapshotId, snapshotPath,
-        checkpointDir, referencedSize, referencedReplicatedSize, exclusiveSize, exclusiveReplicatedSize);
+        checkpointDir, referencedSize, referencedReplicatedSize, exclusiveSize, exclusiveReplicatedSize,
+        trappedKeyBytes, trappedKeyNamespace, trappedDirNamespace);
   }
 
   @Override
@@ -238,6 +277,9 @@ public class OzoneSnapshot {
         ", referencedReplicatedSize=" + referencedReplicatedSize +
         ", exclusiveSize=" + exclusiveSize +
         ", exclusiveReplicatedSize=" + exclusiveReplicatedSize +
+        ", trappedKeyBytes=" + trappedKeyBytes +
+        ", trappedKeyNamespace=" + trappedKeyNamespace +
+        ", trappedDirNamespace=" + trappedDirNamespace +
         '}';
   }
 }
