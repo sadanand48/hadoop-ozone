@@ -168,13 +168,14 @@ New fields on `SnapshotInfo` (Java + `OmClientProtocol.proto`):
 
 | Field | Type | Set / incremented | Decremented |
 |-------|------|-------------------|-------------|
-| `trappedKeyBytes` | `long` | Snapshot create (`deletedTable` sum); ExpandAndAccountDirService | Successful key purge |
+| `trappedKeyBytes` | `long` | Snapshot create (`deletedTable` sum); ExpandAndAccountDirService; DDS promote to `deletedTable` (reclaimable dir) | Successful key purge |
 | `trappedKeyNamespace` | `long` | Same | Successful key purge |
 | `trappedDirNamespace` | `long` | Snapshot create (count of **root** rows in `deletedDirTable`) | DDS removes root from `deletedDirTable` |
 
 **Intentionally no `trappedDirBytes` at create** — dir rows carry no file payload.
 
-Optional later: `trappedKeyReplicatedBytes` for billing.
+`trappedKeyBytes` uses **replicated** logical size (same units as `bucket.snapshotUsedBytes` and KDS
+`purgedBytes`) so create / promote increments reconcile with purge decrements. .
 
 **Displayed total trapped deleted file bytes for snapshot S:**
 
@@ -209,7 +210,7 @@ message SnapshotTrappedLedgerEntry {
 `snapshot_id` meaning:
 
 * **File / key:** the snapshot whose `trappedKey*` was incremented (store snapshot at create;
-  pinning snapshot after ExpandAndAccount).
+  **pinning** snapshot after ExpandAndAccount or DDS promote).
 * **Dir root:** the store snapshot whose `trappedDirNamespace` was incremented at create.
 
 Byte and namespace amounts live only on `SnapshotInfo` counters (and in the purge request sizes at
@@ -236,8 +237,39 @@ in what phase of lifecycle?*
 |-------|-------------------|----------------------|----------------------|--------|
 | Snapshot create: `deletedTable` row | += size (store snapshot) | += count | — | `ACCOUNTED_KEY` |
 | Snapshot create: `deletedDirTable` root | — | — | += 1 | `ACCOUNTED_DIR_ROOT` |
-| ExpandAndAccountDirService: file under pinned dir | += size (**pinning** snapshot) | += 1 | — | `ACCOUNTED_KEY` |
-| DDS promotes file to `deletedTable` | **No new increment** (transfer / already accounted) | | | |
+| ExpandAndAccountDirService: file under pinned dir | += size (**pinning** snapshot) | += 1 | — | `ACCOUNTED_KEY` on `putIfAbsent` success |
+| DDS promotes file to `deletedTable` | += size (**pinning** snapshot) on `putIfAbsent` success; **no increment** if ledger row already exists | += 1 on success; skip if exists | — | `ACCOUNTED_KEY` on first account only |
+
+All three file increment paths use the same gate: **`ledger.putIfAbsent(objectId, pinningSnapshotId, ACCOUNTED_KEY)`** → increment `trappedKey*` only when the insert succeeds.
+
+#### DDS promote to `deletedTable` (reclaimable directory expansion)
+
+When DirectoryDeletingService deep-cleans a **reclaimable** deleted dir root, it promotes files from
+`fileTable` into `deletedTable`. Those files were not in `deletedTable` at snapshot create (only the
+dir root was). It can so happen that the DDS thread first picks up the dir before the Expand thread.
+
+Per file promoted:
+
+```
+pinningSnapshot = resolve pinning snapshot (same logic as ReclaimableKeyFilter)
+
+if ledger.putIfAbsent(objectId, pinningSnapshotId, ACCOUNTED_KEY) succeeds:
+    pinningSnapshot.trappedKeyBytes      += replicatedSize
+    pinningSnapshot.trappedKeyNamespace += 1
+    promote row to deletedTable
+else:
+    # Ledger row already exists (snapshot create or ExpandAndAccount got there first)
+    promote row only — do not increment trappedKey*
+```
+
+| Prior ledger state | DDS promote behavior |
+|------------------|----------------------|
+| Absent | `putIfAbsent` → increment **pinning** snapshot `trappedKey*` → promote |
+| `ACCOUNTED_KEY` (create / expand) | Promote only — prevents double count after expand → reclaimable transition |
+| `PURGED` | Should not promote; treat as invariant violation |
+
+Hook location: `OMDirectoriesPurgeResponseWithFSO` (or shared helper invoked when batching file rows
+into `deletedTable`).
 
 #### Decrement paths
 
@@ -305,7 +337,8 @@ inline `SnapshotInfo` update per task — **not** one transaction per file.
                               │
 ┌─────────────────────────────────────────────────────────────────┐
 │ DirectoryDeletingService                                        │
-│   reclaimable dir  → existing expand / purge path               │
+│   reclaimable dir  → expand subtree; promote files to           │
+│                      deletedTable (ledger putIfAbsent per file) │
 │   non-reclaimable  → enqueue ExpandAndAccountDirService         │
 │   root purged      → trappedDirNamespace--                      │
 └─────────────────────────────────────────────────────────────────┘
@@ -353,11 +386,27 @@ inline `SnapshotInfo` update per task — **not** one transaction per file.
                  S2.trappedDirNamespace = 1 (no file bytes yet)
 3. DDS on S2: /foo in S1 → not reclaimable → enqueue ExpandAndAccount
 4. ExpandAndAccount: files under /foo → S1.trappedKeyBytes += ...
-5. User deletes S1 → SDS moves tables; DDS expands; KDS purges
+5. User deletes S1 → SDS moves tables; DDS expands (reclaimable); KDS purges
 6. trappedKey* and trappedDirNamespace → 0 after full purge
 ```
 
-### 7.3 Reclaimable filter true vs purge
+### 7.3 Reclaimable directory — first account at DDS promote
+
+```
+1. User deletes /foo (reclaimable: no older snapshot pins the root)
+   → deletedDirTable[/foo], trappedDirNamespace++ at next snapshot create
+2. Files remain in fileTable until DDS runs
+3. DDS expands /foo → for each file promoted to deletedTable:
+     ledger.putIfAbsent(objectId, pinningSnapshot, ACCOUNTED_KEY)
+     on success → pinningSnapshot.trappedKeyBytes += replicatedSize
+4. KDS purges from deletedTable → trappedKey*-- on successful OMKeyPurgeRequest
+```
+
+If the dir was **non-reclaimable** first, ExpandAndAccount accounts files while still in `fileTable`;
+when the dir later becomes reclaimable, DDS promote finds existing ledger rows and **skips**
+increment (see §6.3).
+
+### 7.4 Reclaimable filter true vs purge
 
 ```
 ReclaimableKeyFilter == true  →  candidate only (in-memory)
@@ -372,7 +421,7 @@ OMKeyPurgeRequest committed   →  trappedKey*--, ledger PURGED  ← durable bou
 | Race | Risk | Mitigation |
 |------|------|------------|
 | Expand vs KDS purge same file | Double decrement or ghost increment | Ledger CAS on inc/dec; existence check before increment |
-| Expand vs DDS promote | Double count | No increment on DDS promote if ledger has objectId |
+| Expand vs DDS promote | Double count | `putIfAbsent` on promote: increment only when ledger absent; promote-only when expand/create already ledgered |
 | SDS move during expand job | Wrong store walk | `expectedPreviousSnapshotId` on job; abort/requeue |
 | Dir becomes reclaimable before expand runs | Duplicate work | Re-check filter at job start; exit if reclaimable |
 | Snapshot deleted mid-expand | Stale per-snapshot counter | Decrement pinning snapshot from ledger on purge; optional SDS transfer |
@@ -407,9 +456,9 @@ All phases ship behind flags for safe incremental merge.
 ### Proto (`SnapshotInfo` in `OmClientProtocol.proto`)
 
 ```protobuf
-optional uint64 trappedKeyBytes = 22;
-optional uint64 trappedKeyNamespace = 23;
-optional uint64 trappedDirNamespace = 24;
+optional uint64 trappedKeyBytes = 24;          // replicated size
+optional uint64 trappedKeyNamespace = 25;
+optional uint64 trappedDirNamespace = 26;
 ```
 
 ### CLI / `ozone sh snapshot info`
@@ -448,7 +497,7 @@ optional uint64 trappedDirNamespace = 24;
 | **5** | KDS purge + ledger CAS | Idempotent decrement |
 | **6** | DDS dir root purge → `trappedDirNamespace--` | Dir namespace lifecycle |
 | **7** | ExpandAndAccountDirService (manual test trigger) | Pinned dir bytes |
-| **8** | DDS enqueues non-reclaimable dirs | End-to-end pinned dir path |
+| **8** | DDS promote ledger + enqueue non-reclaimable dirs | Reclaimable dir file accounting at promote; pinned dir enqueue |
 | **9** | Dir root state `DIR_EXPAND_ACCOUNTED` | Skip re-walk |
 | **10** | SDS move + ledger `snapshot_id` / counter transfer | Snapshot delete correctness |
 | **11** | Metrics, docs, CLI polish | Operability |
@@ -468,7 +517,7 @@ optional uint64 trappedDirNamespace = 24;
 | 2 | `TestOMSnapshotCreateRequest`: file + dir create accounting |
 | 3 | `TestKeyDeletingService`: purge decrements `trappedKeyBytes` on snapshot DB |
 | 4–5 | Ledger unit tests; partial `RepeatedOmKeyInfo` purge |
-| 6 | `TestDirectoryDeletingService`: reclaimable dir → `trappedDirNamespace` → 0 |
+| 6 | `TestDirectoryDeletingService`: reclaimable dir → `trappedDirNamespace` → 0; promote accounts `trappedKey*` when ledger absent |
 | 7–8 | Integration: S1 pins dir, S2 create, expand accounts, S1 delete, full purge |
 | 10 | `TestSnapshotDeletingServiceIntegrationTest` + counter transfer |
 
@@ -476,7 +525,7 @@ optional uint64 trappedDirNamespace = 24;
 
 ## 13. Future Work
 
-1. `trappedKeyReplicatedBytes` for billing.
+1. Optional billing-specific size breakdown if EC / replication reporting needs differ from quota bytes.
 2. Deprecate `exclusiveSizeDeltaFromDirDeepCleaning` once `trappedKeyBytes` is stable.
 3. HDDS-7968: reclaim eligible keys from snapshot `deletedTable` when AOS table is empty.
 4. Optional `pendingSubtreeBytes` on `deletedDirTable` `OmKeyInfo` at recursive delete to avoid
