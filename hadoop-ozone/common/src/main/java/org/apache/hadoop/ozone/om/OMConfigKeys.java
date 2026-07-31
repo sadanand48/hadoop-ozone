@@ -706,6 +706,9 @@ public final class OMConfigKeys {
   public static final String OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED =
       "ozone.om.snapshot.trapped.accounting.enabled";
   public static final boolean OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED_DEFAULT = false;
+  public static final String OZONE_OM_SNAPSHOT_TRAPPED_LEDGER_CACHE_SIZE =
+      "ozone.om.snapshot.trapped.ledger.cache.size";
+  public static final int OZONE_OM_SNAPSHOT_TRAPPED_LEDGER_CACHE_SIZE_DEFAULT = 100000;
 
   public static final String OZONE_OM_RATIS_EVENTS_MAX_LIMIT =
       "ozone.om.ratis.events.max.limit";

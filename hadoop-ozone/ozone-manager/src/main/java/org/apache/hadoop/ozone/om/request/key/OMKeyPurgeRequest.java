@@ -18,8 +18,6 @@
 package org.apache.hadoop.ozone.om.request.key;
 
 import static org.apache.hadoop.hdds.HddsUtils.fromProtobuf;
-import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED;
-import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED_DEFAULT;
 import static org.apache.hadoop.ozone.om.lock.OzoneManagerLock.LeveledResource.BUCKET_LOCK;
 import static org.apache.hadoop.ozone.om.snapshot.SnapshotUtils.validatePreviousSnapshotId;
 
@@ -141,8 +139,6 @@ public class OMKeyPurgeRequest extends OMKeyRequest {
         // last purge transaction when running for AOS
         deletingServiceMetrics.setLastAOSTransactionInfo(transactionInfo);
       }
-      decrementTrappedDeletedKeyCounters(ozoneManager, fromSnapshotInfo,
-          purgeKeysRequest.getBucketPurgeKeysSizeList());
       if (fromSnapshotInfo != null) {
         omMetadataManager.getSnapshotInfoTable().addCacheEntry(new CacheKey<>(fromSnapshotInfo.getTableKey()),
             CacheValue.get(context.getIndex(), fromSnapshotInfo));
@@ -222,40 +218,4 @@ public class OMKeyPurgeRequest extends OMKeyRequest {
     }
   }
 
-  /**
-   * Decrements per-snapshot trapped deleted key counters when purging from a
-   * snapshot checkpoint. Uses the same purge payload as bucket
-   * {@code snapshotUsedBytes} reconciliation.
-   */
-  static void decrementTrappedDeletedKeyCounters(
-      OzoneManager ozoneManager,
-      SnapshotInfo fromSnapshotInfo,
-      List<BucketPurgeKeysSize> bucketPurgeKeysSizeList) {
-    if (fromSnapshotInfo == null) {
-      return;
-    }
-    if (!ozoneManager.getConfiguration().getBoolean(
-        OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED,
-        OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED_DEFAULT)) {
-      return;
-    }
-    long purgedBytes = 0L;
-    long purgedNamespace = 0L;
-    for (BucketPurgeKeysSize bucketPurgeKeysSize : bucketPurgeKeysSizeList) {
-      purgedBytes += bucketPurgeKeysSize.getPurgedBytes();
-      purgedNamespace += bucketPurgeKeysSize.getPurgedNamespace();
-    }
-    if (purgedBytes == 0 && purgedNamespace == 0) {
-      return;
-    }
-    fromSnapshotInfo.setTrappedKeyBytes(fromSnapshotInfo.getTrappedKeyBytes() - purgedBytes);
-    fromSnapshotInfo.setTrappedKeyNamespace(
-        fromSnapshotInfo.getTrappedKeyNamespace() - purgedNamespace);
-    if (LOG.isDebugEnabled()) {
-      LOG.debug("Snapshot {} trapped deleted decrement: purgedBytes={}, purgedNamespace={}, "
-              + "remaining trappedKeyBytes={}, trappedKeyNamespace={}",
-          fromSnapshotInfo.getTableKey(), purgedBytes, purgedNamespace,
-          fromSnapshotInfo.getTrappedKeyBytes(), fromSnapshotInfo.getTrappedKeyNamespace());
-    }
-  }
 }

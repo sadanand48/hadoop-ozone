@@ -55,6 +55,7 @@ import org.apache.hadoop.ozone.om.helpers.OmPrefixInfo;
 import org.apache.hadoop.ozone.om.helpers.OmVolumeArgs;
 import org.apache.hadoop.ozone.om.helpers.RepeatedOmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.SnapshotInfo;
+import org.apache.hadoop.ozone.om.helpers.SnapshotTrappedLedgerEntry;
 import org.apache.hadoop.ozone.om.lock.HierarchicalResourceLockManager;
 import org.apache.hadoop.ozone.om.lock.IOzoneManagerLock;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.ExpiredMultipartUploadsBucket;
@@ -492,6 +493,8 @@ public interface OMMetadataManager extends DBStoreHAManager, AutoCloseable {
   Table<String, SnapshotInfo> getSnapshotInfoTable();
 
   Table<String, String> getSnapshotRenamedTable();
+
+  Table<String, SnapshotTrappedLedgerEntry> getSnapshotTrappedLedgerTable();
 
   Table<String, CompactionLogEntry> getCompactionLogTable();
 

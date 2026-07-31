@@ -42,9 +42,11 @@ import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.protocol.proto.HddsProtos;
 import org.apache.hadoop.hdds.utils.TransactionInfo;
 import org.apache.hadoop.hdds.utils.db.BatchOperation;
+import org.apache.hadoop.ozone.om.OMConfigKeys;
 import org.apache.hadoop.ozone.om.OmSnapshot;
 import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.SnapshotInfo;
+import org.apache.hadoop.ozone.om.snapshot.trapped.SnapshotTrappedLedger;
 import org.apache.hadoop.ozone.om.lock.IOzoneManagerLock;
 import org.apache.hadoop.ozone.om.request.OMRequestTestUtils;
 import org.apache.hadoop.ozone.om.response.key.OMKeyPurgeResponse;
@@ -308,6 +310,10 @@ public class TestOMKeyPurgeRequestAndResponse extends TestOMKeyRequest {
   public void testTrappedDeletedKeyCountersDecrementedOnSnapshotPurge() throws Exception {
     OzoneConfiguration conf = (OzoneConfiguration) ozoneManager.getConfiguration();
     conf.setBoolean(OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED, true);
+    when(ozoneManager.getSnapshotTrappedLedger()).thenAnswer(invocation ->
+        new SnapshotTrappedLedger(
+            omMetadataManager.getSnapshotTrappedLedgerTable(),
+            OMConfigKeys.OZONE_OM_SNAPSHOT_TRAPPED_LEDGER_CACHE_SIZE_DEFAULT));
     when(ozoneManager.getDefaultReplicationConfig())
         .thenReturn(RatisReplicationConfig.getInstance(HddsProtos.ReplicationFactor.THREE));
 
@@ -340,9 +346,49 @@ public class TestOMKeyPurgeRequestAndResponse extends TestOMKeyRequest {
         new OMKeyPurgeRequest(preExecute(omRequest));
     omKeyPurgeRequest.validateAndUpdateCache(ozoneManager, 100L);
 
-    SnapshotInfo updatedSnapshotInfo =
+    SnapshotInfo snapshotInfoAfterCacheUpdate =
         omMetadataManager.getSnapshotInfoTable().get(snapInfo.getTableKey());
+    assertEquals(keysInTest * 1000L, snapshotInfoAfterCacheUpdate.getTrappedKeyBytes());
+    assertEquals(keysInTest, snapshotInfoAfterCacheUpdate.getTrappedKeyNamespace());
+
+    OMResponse omResponse = OMResponse.newBuilder()
+        .setPurgeKeysResponse(PurgeKeysResponse.getDefaultInstance())
+        .setCmdType(Type.PurgeKeys)
+        .setStatus(Status.OK)
+        .build();
+
+    try (BatchOperation batchOperation = omMetadataManager.getStore().initBatchOperation()) {
+      OMKeyPurgeResponse omKeyPurgeResponse = new OMKeyPurgeResponse(
+          omResponse,
+          Collections.singletonList(deleteKeysAndRenamedEntry.getKey().get(0)),
+          Collections.emptyList(),
+          snapshotInfoAfterCacheUpdate,
+          null,
+          null);
+      omKeyPurgeResponse.addToDBBatch(omMetadataManager, batchOperation);
+      omMetadataManager.getStore().commitBatchOperation(batchOperation);
+    }
+
+    SnapshotInfo updatedSnapshotInfo =
+        omMetadataManager.getSnapshotInfoTable().getSkipCache(snapInfo.getTableKey());
     assertEquals((keysInTest - 1) * 1000L, updatedSnapshotInfo.getTrappedKeyBytes());
     assertEquals(keysInTest - 1, updatedSnapshotInfo.getTrappedKeyNamespace());
+
+    // Replay the same purge payload and verify no second decrement.
+    try (BatchOperation batchOperation = omMetadataManager.getStore().initBatchOperation()) {
+      OMKeyPurgeResponse replayResponse = new OMKeyPurgeResponse(
+          omResponse,
+          Collections.singletonList(deleteKeysAndRenamedEntry.getKey().get(0)),
+          Collections.emptyList(),
+          snapshotInfoAfterCacheUpdate,
+          null,
+          null);
+      replayResponse.addToDBBatch(omMetadataManager, batchOperation);
+      omMetadataManager.getStore().commitBatchOperation(batchOperation);
+    }
+    SnapshotInfo replayedSnapshotInfo =
+        omMetadataManager.getSnapshotInfoTable().getSkipCache(snapInfo.getTableKey());
+    assertEquals((keysInTest - 1) * 1000L, replayedSnapshotInfo.getTrappedKeyBytes());
+    assertEquals(keysInTest - 1, replayedSnapshotInfo.getTrappedKeyNamespace());
   }
 }

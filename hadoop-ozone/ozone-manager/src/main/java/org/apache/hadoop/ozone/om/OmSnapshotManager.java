@@ -105,6 +105,7 @@ import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.RepeatedOmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.SnapshotDiffJob;
 import org.apache.hadoop.ozone.om.helpers.SnapshotInfo;
+import org.apache.hadoop.ozone.om.helpers.SnapshotTrappedLedgerEntry.State;
 import org.apache.hadoop.ozone.om.lock.OMLockDetails;
 import org.apache.hadoop.ozone.om.service.SnapshotDiffCleanupService;
 import org.apache.hadoop.ozone.om.snapshot.OmSnapshotLocalDataManager;
@@ -112,6 +113,7 @@ import org.apache.hadoop.ozone.om.snapshot.SnapshotCache;
 import org.apache.hadoop.ozone.om.snapshot.SnapshotDiffManager;
 import org.apache.hadoop.ozone.om.snapshot.SnapshotUtils;
 import org.apache.hadoop.ozone.om.snapshot.db.SnapshotDiffDBDefinition;
+import org.apache.hadoop.ozone.om.snapshot.trapped.SnapshotTrappedLedger;
 import org.apache.hadoop.ozone.snapshot.CancelSnapshotDiffResponse;
 import org.apache.hadoop.ozone.snapshot.ListSnapshotDiffJobResponse;
 import org.apache.hadoop.ozone.snapshot.SnapshotDiffReportOzone;
@@ -559,8 +561,9 @@ public final class OmSnapshotManager implements AutoCloseable {
     } else {
       dbCheckpoint = store.getSnapshot(snapshotInfo.getCheckpointDirName(0));
     }
+    OzoneManager ozoneManager = ((OmMetadataManagerImpl) omMetadataManager).getOzoneManager();
     OmSnapshotManager omSnapshotManager =
-        ((OmMetadataManagerImpl) omMetadataManager).getOzoneManager().getOmSnapshotManager();
+        ozoneManager.getOmSnapshotManager();
     OmSnapshotLocalDataManager snapshotLocalDataManager = omSnapshotManager.getSnapshotLocalDataManager();
     OzoneConfiguration configuration = ((OmMetadataManagerImpl) omMetadataManager).getOzoneManager().getConfiguration();
     try (OmMetadataManagerImpl checkpointMetadataManager =
@@ -570,8 +573,12 @@ public final class OmSnapshotManager implements AutoCloseable {
           (RDBStore) checkpointMetadataManager.getStore(), snapshotInfo);
     }
 
-    accountTrappedDeletedDataOnSnapshotCreate(omMetadataManager, snapshotInfo,
-        configuration, batchOperation);
+    accountTrappedDeletedDataOnSnapshotCreate(
+        omMetadataManager,
+        snapshotInfo,
+        ozoneManager.getSnapshotTrappedLedger(),
+        configuration,
+        batchOperation);
 
     // Clean up active DB's deletedTable right after checkpoint is taken,
     // Snapshot create is processed as a single transaction and
@@ -596,10 +603,9 @@ public final class OmSnapshotManager implements AutoCloseable {
   }
 
   /**
-   * Sums deleted keys and counts deleted directory roots in the active OM DB for
+   * Accounts deleted keys and deleted directory roots in the active OM DB for
    * the snapshot bucket, then stores the totals on {@code snapshotInfo}.
-   * Key bytes use replicated size from {@code RepeatedOmKeyInfo#getTotalSize}
-   * to match {@code bucket.snapshotUsedBytes} and KDS purge decrements.
+   * Accounting is ledger-gated via put-if-absent to prevent duplicate increments.
    * <p>
    * Must run after the checkpoint is taken and before bucket-prefix rows are
    * stripped from the active {@code deletedTable} / {@code deletedDirTable}.
@@ -610,6 +616,7 @@ public final class OmSnapshotManager implements AutoCloseable {
   static void accountTrappedDeletedDataOnSnapshotCreate(
       OMMetadataManager omMetadataManager,
       SnapshotInfo snapshotInfo,
+      SnapshotTrappedLedger snapshotTrappedLedger,
       ConfigurationSource configuration,
       BatchOperation batchOperation) throws IOException {
     if (!configuration.getBoolean(OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED,
@@ -617,8 +624,12 @@ public final class OmSnapshotManager implements AutoCloseable {
       return;
     }
 
+    Objects.requireNonNull(snapshotTrappedLedger, "snapshotTrappedLedger == null");
+
     String volume = snapshotInfo.getVolumeName();
     String bucket = snapshotInfo.getBucketName();
+    long volumeId = omMetadataManager.getVolumeId(volume);
+    long bucketId = omMetadataManager.getBucketId(volume, bucket);
 
     long trappedKeyBytes = 0L;
     long trappedKeyNamespace = 0L;
@@ -629,8 +640,18 @@ public final class OmSnapshotManager implements AutoCloseable {
         deletedTable.iterator(deletedTablePrefix)) {
       while (itr.hasNext()) {
         RepeatedOmKeyInfo repeatedOmKeyInfo = itr.next().getValue();
-        trappedKeyBytes += repeatedOmKeyInfo.getTotalSize().getRight();
-        trappedKeyNamespace += repeatedOmKeyInfo.getOmKeyInfoList().size();
+        for (OmKeyInfo omKeyInfo : repeatedOmKeyInfo.getOmKeyInfoList()) {
+          if (snapshotTrappedLedger.putIfAbsent(
+              batchOperation,
+              volumeId,
+              bucketId,
+              omKeyInfo.getObjectID(),
+              snapshotInfo.getSnapshotId(),
+              State.ACCOUNTED_KEY)) {
+            trappedKeyBytes += omKeyInfo.getReplicatedSize();
+            trappedKeyNamespace++;
+          }
+        }
       }
     }
 
@@ -641,8 +662,16 @@ public final class OmSnapshotManager implements AutoCloseable {
     try (TableIterator<String, ? extends KeyValue<String, OmKeyInfo>> itr =
         deletedDirTable.iterator(deletedDirPrefix)) {
       while (itr.hasNext()) {
-        itr.next();
-        trappedDirNamespace++;
+        OmKeyInfo dirInfo = itr.next().getValue();
+        if (snapshotTrappedLedger.putIfAbsent(
+            batchOperation,
+            volumeId,
+            bucketId,
+            dirInfo.getObjectID(),
+            snapshotInfo.getSnapshotId(),
+            State.ACCOUNTED_DIR_ROOT)) {
+          trappedDirNamespace++;
+        }
       }
     }
 

@@ -943,6 +943,19 @@ message SnapshotInfo {
   optional uint64 trappedDirNamespace = 26;
 }
 
+enum SnapshotTrappedLedgerStateProto {
+  ACCOUNTED_KEY = 0;
+  ACCOUNTED_DIR_ROOT = 1;
+  DIR_EXPAND_ACCOUNTED = 2;
+  PURGED = 3;
+}
+
+message SnapshotTrappedLedgerEntryProto {
+  optional uint64 objectId = 1;
+  optional hadoop.hdds.UUID snapshotId = 2;
+  optional SnapshotTrappedLedgerStateProto state = 3;
+}
+
 message SnapshotDiffJobProto {
   optional uint64 creationTime = 1;
   optional string jobId = 2;

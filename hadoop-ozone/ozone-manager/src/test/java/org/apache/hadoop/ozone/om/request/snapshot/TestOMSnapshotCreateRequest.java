@@ -41,6 +41,7 @@ import org.apache.hadoop.hdds.conf.OzoneConfiguration;
 import org.apache.hadoop.hdds.utils.TransactionInfo;
 import org.apache.hadoop.hdds.utils.db.Table;
 import org.apache.hadoop.hdds.utils.db.TableIterator;
+import org.apache.hadoop.ozone.om.OMConfigKeys;
 import org.apache.hadoop.ozone.om.OmSnapshotManager;
 import org.apache.hadoop.ozone.om.OzoneManager;
 import org.apache.hadoop.ozone.om.ResolvedBucket;
@@ -50,12 +51,15 @@ import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.RepeatedOmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.SnapshotInfo;
+import org.apache.hadoop.ozone.om.helpers.SnapshotTrappedLedgerEntry;
+import org.apache.hadoop.ozone.om.helpers.SnapshotTrappedLedgerEntry.State;
 import org.apache.hadoop.ozone.om.request.OMClientRequest;
 import org.apache.hadoop.ozone.om.request.OMRequestTestUtils;
 import org.apache.hadoop.ozone.om.response.OMClientResponse;
 import org.apache.hadoop.ozone.om.response.key.OMKeyRenameResponse;
 import org.apache.hadoop.ozone.om.response.key.OMKeyRenameResponseWithFSO;
 import org.apache.hadoop.ozone.om.snapshot.TestSnapshotRequestAndResponse;
+import org.apache.hadoop.ozone.om.snapshot.trapped.SnapshotTrappedLedger;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMRequest;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMResponse;
@@ -408,6 +412,17 @@ public class TestOMSnapshotCreateRequest extends TestSnapshotRequestAndResponse 
     assertEquals(6000L, snapshotInfo.getTrappedKeyBytes());
     assertEquals(2L, snapshotInfo.getTrappedKeyNamespace());
     assertEquals(0L, snapshotInfo.getTrappedDirNamespace());
+    assertEquals(2L, getOmMetadataManager().countRowsInTable(
+        getOmMetadataManager().getSnapshotTrappedLedgerTable()));
+
+    SnapshotTrappedLedgerEntry keyLedger =
+        getOmMetadataManager().getSnapshotTrappedLedgerTable().get(
+            SnapshotTrappedLedgerEntry.encodeKey(
+                getOmMetadataManager().getVolumeId(volumeName),
+                getOmMetadataManager().getBucketId(volumeName, bucketName),
+                key1.getObjectID()));
+    assertEquals(State.ACCOUNTED_KEY, keyLedger.getState());
+    assertEquals(snapshotInfo.getSnapshotId(), keyLedger.getSnapshotId());
   }
 
   @Test
@@ -428,12 +443,18 @@ public class TestOMSnapshotCreateRequest extends TestSnapshotRequestAndResponse 
     assertEquals(0L, snapshotInfo.getTrappedKeyBytes());
     assertEquals(0L, snapshotInfo.getTrappedKeyNamespace());
     assertEquals(2L, snapshotInfo.getTrappedDirNamespace());
+    assertEquals(2L, getOmMetadataManager().countRowsInTable(
+        getOmMetadataManager().getSnapshotTrappedLedgerTable()));
   }
 
   private void enableTrappedDeletedAccounting() {
     OzoneConfiguration configuration =
         (OzoneConfiguration) getOzoneManager().getConfiguration();
     configuration.setBoolean(OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED, true);
+    when(getOzoneManager().getSnapshotTrappedLedger()).thenAnswer(invocation ->
+        new SnapshotTrappedLedger(
+            getOmMetadataManager().getSnapshotTrappedLedgerTable(),
+            OMConfigKeys.OZONE_OM_SNAPSHOT_TRAPPED_LEDGER_CACHE_SIZE_DEFAULT));
   }
 
   private SnapshotInfo getSnapshotInfo(String volumeName, String bucketName,

@@ -17,6 +17,9 @@
 
 package org.apache.hadoop.ozone.om.response.key;
 
+import static org.apache.hadoop.ozone.OzoneConsts.OM_KEY_PREFIX;
+import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED;
+import static org.apache.hadoop.ozone.om.OMConfigKeys.OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED_DEFAULT;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.DELETED_DIR_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.DELETED_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.DIRECTORY_TABLE;
@@ -27,6 +30,7 @@ import static org.apache.hadoop.ozone.om.lock.DAGLeveledResource.SNAPSHOT_DB_CON
 import com.google.common.annotations.VisibleForTesting;
 import jakarta.annotation.Nonnull;
 import java.io.IOException;
+import java.util.EnumSet;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -44,10 +48,12 @@ import org.apache.hadoop.ozone.om.helpers.OmBucketInfo;
 import org.apache.hadoop.ozone.om.helpers.OmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.RepeatedOmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.SnapshotInfo;
+import org.apache.hadoop.ozone.om.helpers.SnapshotTrappedLedgerEntry.State;
 import org.apache.hadoop.ozone.om.lock.IOzoneManagerLock;
 import org.apache.hadoop.ozone.om.lock.OMLockDetails;
 import org.apache.hadoop.ozone.om.request.key.OMDirectoriesPurgeRequestWithFSO;
 import org.apache.hadoop.ozone.om.response.CleanupTableInfo;
+import org.apache.hadoop.ozone.om.snapshot.trapped.SnapshotTrappedLedger;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos;
 import org.apache.hadoop.ozone.protocol.proto.OzoneManagerProtocolProtos.OMResponse;
 import org.apache.ratis.util.function.UncheckedAutoCloseableSupplier;
@@ -101,6 +107,8 @@ public class OMDirectoriesPurgeResponseWithFSO extends OmKeyResponse {
       try (UncheckedAutoCloseableSupplier<OmSnapshot>
           rcFromSnapshotInfo = omSnapshotManager.getSnapshot(fromSnapshotId)) {
         OmSnapshot fromSnapshot = rcFromSnapshotInfo.get();
+        decrementTrappedDirNamespaceIfNeeded(
+            metadataManager, fromSnapshot.getMetadataManager(), batchOp);
         DBStore fromSnapshotStore = fromSnapshot.getMetadataManager()
             .getStore();
         // Init Batch Operation for snapshot db.
@@ -199,6 +207,70 @@ public class OMDirectoriesPurgeResponseWithFSO extends OmKeyResponse {
         }
       }
     }
+  }
+
+  private void decrementTrappedDirNamespaceIfNeeded(
+      OMMetadataManager metadataManager,
+      OMMetadataManager fromSnapshotMetadataManager,
+      BatchOperation batchOp) throws IOException {
+    if (fromSnapshotInfo == null) {
+      return;
+    }
+    OmMetadataManagerImpl omMetadataManagerImpl =
+        (OmMetadataManagerImpl) metadataManager;
+    if (!omMetadataManagerImpl.getOzoneManager().getConfiguration().getBoolean(
+        OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED,
+        OZONE_OM_SNAPSHOT_TRAPPED_ACCOUNTING_ENABLED_DEFAULT)) {
+      return;
+    }
+
+    SnapshotTrappedLedger ledger =
+        omMetadataManagerImpl.getOzoneManager().getSnapshotTrappedLedger();
+    long decremented = 0L;
+    for (OzoneManagerProtocolProtos.PurgePathRequest path : paths) {
+      if (!path.hasDeletedDir()) {
+        continue;
+      }
+      Long objectId =
+          getDeletedDirObjectId(path.getDeletedDir(), fromSnapshotMetadataManager);
+      if (objectId == null) {
+        continue;
+      }
+      if (ledger.compareAndSetState(
+          batchOp,
+          path.getVolumeId(),
+          path.getBucketId(),
+          objectId.longValue(),
+          EnumSet.of(State.ACCOUNTED_DIR_ROOT, State.DIR_EXPAND_ACCOUNTED),
+          State.PURGED)) {
+        decremented++;
+      }
+    }
+
+    if (decremented > 0) {
+      fromSnapshotInfo.setTrappedDirNamespace(
+          fromSnapshotInfo.getTrappedDirNamespace() - decremented);
+    }
+  }
+
+  private static Long getDeletedDirObjectId(
+      String deletedDirKey,
+      OMMetadataManager fromSnapshotMetadataManager) throws IOException {
+    int lastSep = deletedDirKey.lastIndexOf(OM_KEY_PREFIX);
+    if (lastSep >= 0 && lastSep < deletedDirKey.length() - 1) {
+      String suffix = deletedDirKey.substring(lastSep + 1);
+      try {
+        return Long.parseLong(suffix);
+      } catch (NumberFormatException ignored) {
+        // Fall through to deletedDirTable lookup.
+      }
+    }
+    OmKeyInfo deletedDirInfo =
+        fromSnapshotMetadataManager.getDeletedDirTable().get(deletedDirKey);
+    if (deletedDirInfo != null) {
+      return deletedDirInfo.getObjectID();
+    }
+    return null;
   }
 
   @VisibleForTesting
