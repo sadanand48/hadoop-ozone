@@ -306,6 +306,7 @@ import org.apache.hadoop.ozone.om.service.DirectoryDeletingService;
 import org.apache.hadoop.ozone.om.service.KeyLifecycleService;
 import org.apache.hadoop.ozone.om.service.OMRangerBGSyncService;
 import org.apache.hadoop.ozone.om.service.QuotaRepairTask;
+import org.apache.hadoop.ozone.om.snapshot.trapped.SnapshotTrappedLedger;
 import org.apache.hadoop.ozone.om.snapshot.defrag.SnapshotDefragService;
 import org.apache.hadoop.ozone.om.upgrade.OMLayoutFeature;
 import org.apache.hadoop.ozone.om.upgrade.OMLayoutVersionManager;
@@ -526,6 +527,7 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
   // instance creation every single time.
   private UncheckedAutoCloseableSupplier<IOmMetadataReader> rcOmMetadataReader;
   private OmSnapshotManager omSnapshotManager;
+  private volatile SnapshotTrappedLedger snapshotTrappedLedger;
   private volatile DirectoryDeletingService dirDeletingService;
 
   private final OMServiceManager serviceManager;
@@ -1810,6 +1812,24 @@ public final class OzoneManager extends ServiceRuntimeInfoImpl
    */
   public OmSnapshotManager getOmSnapshotManager() {
     return omSnapshotManager;
+  }
+
+  /**
+   * Returns the trapped deleted objectID ledger.
+   */
+  public SnapshotTrappedLedger getSnapshotTrappedLedger() {
+    if (snapshotTrappedLedger == null) {
+      synchronized (this) {
+        if (snapshotTrappedLedger == null) {
+          int cacheSize = configuration.getInt(
+              OMConfigKeys.OZONE_OM_SNAPSHOT_TRAPPED_LEDGER_CACHE_SIZE,
+              OMConfigKeys.OZONE_OM_SNAPSHOT_TRAPPED_LEDGER_CACHE_SIZE_DEFAULT);
+          snapshotTrappedLedger = new SnapshotTrappedLedger(
+              metadataManager.getSnapshotTrappedLedgerTable(), cacheSize);
+        }
+      }
+    }
+    return snapshotTrappedLedger;
   }
 
   /**

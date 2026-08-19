@@ -1137,6 +1137,27 @@
             ]
           },
           {
+            "name": "SnapshotTrappedLedgerStateProto",
+            "enum_fields": [
+              {
+                "name": "ACCOUNTED_KEY",
+                "integer": 0
+              },
+              {
+                "name": "ACCOUNTED_DIR_ROOT",
+                "integer": 1
+              },
+              {
+                "name": "DIR_EXPAND_ACCOUNTED",
+                "integer": 2
+              },
+              {
+                "name": "PURGED",
+                "integer": 3
+              }
+            ]
+          },
+          {
             "name": "OzoneObj.ObjectType",
             "enum_fields": [
               {
@@ -3735,6 +3756,47 @@
                 "id": 23,
                 "name": "createTransactionInfo",
                 "type": "bytes",
+                "optional": true
+              },
+              {
+                "id": 24,
+                "name": "trappedKeyBytes",
+                "type": "uint64",
+                "optional": true
+              },
+              {
+                "id": 25,
+                "name": "trappedKeyNamespace",
+                "type": "uint64",
+                "optional": true
+              },
+              {
+                "id": 26,
+                "name": "trappedDirNamespace",
+                "type": "uint64",
+                "optional": true
+              }
+            ]
+          },
+          {
+            "name": "SnapshotTrappedLedgerEntryProto",
+            "fields": [
+              {
+                "id": 1,
+                "name": "objectId",
+                "type": "uint64",
+                "optional": true
+              },
+              {
+                "id": 2,
+                "name": "snapshotId",
+                "type": "hadoop.hdds.UUID",
+                "optional": true
+              },
+              {
+                "id": 3,
+                "name": "state",
+                "type": "SnapshotTrappedLedgerStateProto",
                 "optional": true
               }
             ]

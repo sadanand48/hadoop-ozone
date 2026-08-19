@@ -39,6 +39,7 @@ import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.OPEN_FILE_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.OPEN_KEY_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.SNAPSHOT_INFO_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.SNAPSHOT_RENAMED_TABLE;
+import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.SNAPSHOT_TRAPPED_LEDGER_TABLE;
 import static org.apache.hadoop.ozone.om.codec.OMDBDefinition.VOLUME_TABLE;
 import static org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes.BUCKET_NOT_FOUND;
 import static org.apache.hadoop.ozone.om.exceptions.OMException.ResultCodes.FILE_NOT_FOUND;
@@ -122,6 +123,7 @@ import org.apache.hadoop.ozone.om.helpers.QuotaUtil;
 import org.apache.hadoop.ozone.om.helpers.RepeatedOmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.S3SecretValue;
 import org.apache.hadoop.ozone.om.helpers.SnapshotInfo;
+import org.apache.hadoop.ozone.om.helpers.SnapshotTrappedLedgerEntry;
 import org.apache.hadoop.ozone.om.helpers.WithMetadata;
 import org.apache.hadoop.ozone.om.lock.HierarchicalResourceLockManager;
 import org.apache.hadoop.ozone.om.lock.IOzoneManagerLock;
@@ -188,6 +190,7 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
 
   private Table<String, SnapshotInfo> snapshotInfoTable;
   private Table<String, String> snapshotRenamedTable;
+  private Table<String, SnapshotTrappedLedgerEntry> snapshotTrappedLedgerTable;
   private Table<String, CompactionLogEntry> compactionLogTable;
 
   private OzoneManager ozoneManager;
@@ -535,6 +538,9 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
     // volumeName/bucketName/objectID -> renamedKey or renamedDir
     snapshotRenamedTable = initializer.get(OMDBDefinition.SNAPSHOT_RENAMED_TABLE_DEF);
     // TODO: [SNAPSHOT] Initialize table lock for snapshotRenamedTable.
+
+    snapshotTrappedLedgerTable =
+        initializer.get(OMDBDefinition.SNAPSHOT_TRAPPED_LEDGER_TABLE_DEF);
 
     compactionLogTable = initializer.get(OMDBDefinition.COMPACTION_LOG_TABLE_DEF);
 
@@ -1741,6 +1747,11 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
   }
 
   @Override
+  public Table<String, SnapshotTrappedLedgerEntry> getSnapshotTrappedLedgerTable() {
+    return snapshotTrappedLedgerTable;
+  }
+
+  @Override
   public Table<String, CompactionLogEntry> getCompactionLogTable() {
     return compactionLogTable;
   }
@@ -2002,8 +2013,8 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
   public TablePrefixInfo getTableBucketPrefix(String volume, String bucket) throws IOException {
     String keyPrefix = getBucketKeyPrefix(volume, bucket);
     String keyPrefixFso = getBucketKeyPrefixFSO(volume, bucket);
-    // Set value to 12 to avoid creating too big a HashTable unnecessarily.
-    Map<String, String> tablePrefixMap = new HashMap<>(12, 1.0f);
+    // Set value to 13 to avoid creating too big a HashTable unnecessarily.
+    Map<String, String> tablePrefixMap = new HashMap<>(13, 1.0f);
 
     tablePrefixMap.put(VOLUME_TABLE, getVolumeKey(volume));
     tablePrefixMap.put(BUCKET_TABLE, getBucketKey(volume, bucket));
@@ -2019,6 +2030,7 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
     tablePrefixMap.put(DIRECTORY_TABLE, keyPrefixFso);
     tablePrefixMap.put(DELETED_DIR_TABLE, keyPrefixFso);
     tablePrefixMap.put(OPEN_FILE_TABLE, keyPrefixFso);
+    tablePrefixMap.put(SNAPSHOT_TRAPPED_LEDGER_TABLE, keyPrefixFso);
 
     return new TablePrefixInfo(tablePrefixMap);
   }
@@ -2041,6 +2053,7 @@ public class OmMetadataManagerImpl implements OMMetadataManager,
     case DIRECTORY_TABLE:
     case DELETED_DIR_TABLE:
     case OPEN_FILE_TABLE:
+    case SNAPSHOT_TRAPPED_LEDGER_TABLE:
       return getBucketKeyPrefixFSO(volume, bucket);
     default:
       LOG.warn("Unknown table name '{}' passed to getTableBucketPrefix (volume='{}', bucket='{}'). " +

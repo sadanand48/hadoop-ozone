@@ -953,6 +953,25 @@ message SnapshotInfo {
   // snapshot exclusive size after replication
   optional uint64 exclusiveReplicatedSizeDeltaFromDirDeepCleaning = 22;
   optional bytes createTransactionInfo = 23;
+  // Replicated size of deleted keys trapped due to this snapshot.
+  optional uint64 trappedKeyBytes = 24;
+  // Namespace count of deleted keys trapped due to this snapshot.
+  optional uint64 trappedKeyNamespace = 25;
+  // Namespace count of deleted directory roots pending deep clean for this snapshot.
+  optional uint64 trappedDirNamespace = 26;
+}
+
+enum SnapshotTrappedLedgerStateProto {
+  ACCOUNTED_KEY = 0;
+  ACCOUNTED_DIR_ROOT = 1;
+  DIR_EXPAND_ACCOUNTED = 2;
+  PURGED = 3;
+}
+
+message SnapshotTrappedLedgerEntryProto {
+  optional uint64 objectId = 1;
+  optional hadoop.hdds.UUID snapshotId = 2;
+  optional SnapshotTrappedLedgerStateProto state = 3;
 }
 
 message SnapshotDiffJobProto {

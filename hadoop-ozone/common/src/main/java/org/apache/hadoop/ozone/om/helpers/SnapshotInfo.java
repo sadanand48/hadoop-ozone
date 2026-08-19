@@ -102,6 +102,9 @@ public final class SnapshotInfo implements Auditable, CopyObject<SnapshotInfo> {
    */
   private long exclusiveReplicatedSizeDeltaFromDirDeepCleaning;
   private boolean deepCleanedDeletedDir;
+  private long trappedKeyBytes;
+  private long trappedKeyNamespace;
+  private long trappedDirNamespace;
   private ByteString createTransactionInfo;
   private ByteString lastTransactionInfo;
 
@@ -125,6 +128,9 @@ public final class SnapshotInfo implements Auditable, CopyObject<SnapshotInfo> {
     this.exclusiveSizeDeltaFromDirDeepCleaning = b.exclusiveSizeDeltaFromDirDeepCleaning;
     this.exclusiveReplicatedSizeDeltaFromDirDeepCleaning = b.exclusiveReplicatedSizeDeltaFromDirDeepCleaning;
     this.deepCleanedDeletedDir = b.deepCleanedDeletedDir;
+    this.trappedKeyBytes = b.trappedKeyBytes;
+    this.trappedKeyNamespace = b.trappedKeyNamespace;
+    this.trappedDirNamespace = b.trappedDirNamespace;
     this.lastTransactionInfo = b.lastTransactionInfo;
     this.createTransactionInfo = b.createTransactionInfo;
   }
@@ -247,6 +253,9 @@ public final class SnapshotInfo implements Auditable, CopyObject<SnapshotInfo> {
         .setExclusiveSizeDeltaFromDirDeepCleaning(exclusiveSizeDeltaFromDirDeepCleaning)
         .setExclusiveReplicatedSizeDeltaFromDirDeepCleaning(exclusiveReplicatedSizeDeltaFromDirDeepCleaning)
         .setDeepCleanedDeletedDir(deepCleanedDeletedDir)
+        .setTrappedKeyBytes(trappedKeyBytes)
+        .setTrappedKeyNamespace(trappedKeyNamespace)
+        .setTrappedDirNamespace(trappedDirNamespace)
         .setLastTransactionInfo(lastTransactionInfo)
         .setCreateTransactionInfo(createTransactionInfo);
   }
@@ -274,6 +283,9 @@ public final class SnapshotInfo implements Auditable, CopyObject<SnapshotInfo> {
     private long exclusiveSizeDeltaFromDirDeepCleaning;
     private long exclusiveReplicatedSizeDeltaFromDirDeepCleaning;
     private boolean deepCleanedDeletedDir;
+    private long trappedKeyBytes;
+    private long trappedKeyNamespace;
+    private long trappedDirNamespace;
     private ByteString createTransactionInfo;
     private ByteString lastTransactionInfo;
 
@@ -411,6 +423,24 @@ public final class SnapshotInfo implements Auditable, CopyObject<SnapshotInfo> {
       return this;
     }
 
+    /** @param trappedKeyBytes - Trapped deleted key replicated bytes for this snapshot. */
+    public Builder setTrappedKeyBytes(long trappedKeyBytes) {
+      this.trappedKeyBytes = trappedKeyBytes;
+      return this;
+    }
+
+    /** @param trappedKeyNamespace - Trapped deleted key namespace for this snapshot. */
+    public Builder setTrappedKeyNamespace(long trappedKeyNamespace) {
+      this.trappedKeyNamespace = trappedKeyNamespace;
+      return this;
+    }
+
+    /** @param trappedDirNamespace - Trapped deleted directory root namespace for this snapshot. */
+    public Builder setTrappedDirNamespace(long trappedDirNamespace) {
+      this.trappedDirNamespace = trappedDirNamespace;
+      return this;
+    }
+
     public Builder setCreateTransactionInfo(ByteString createTransactionInfo) {
       this.createTransactionInfo = createTransactionInfo;
       return this;
@@ -447,7 +477,10 @@ public final class SnapshotInfo implements Auditable, CopyObject<SnapshotInfo> {
             .setExclusiveReplicatedSize(exclusiveReplicatedSize)
             .setExclusiveSizeDeltaFromDirDeepCleaning(exclusiveSizeDeltaFromDirDeepCleaning)
             .setExclusiveReplicatedSizeDeltaFromDirDeepCleaning(exclusiveReplicatedSizeDeltaFromDirDeepCleaning)
-            .setDeepCleanedDeletedDir(deepCleanedDeletedDir);
+            .setDeepCleanedDeletedDir(deepCleanedDeletedDir)
+            .setTrappedKeyBytes(trappedKeyBytes)
+            .setTrappedKeyNamespace(trappedKeyNamespace)
+            .setTrappedDirNamespace(trappedDirNamespace);
 
     if (pathPreviousSnapshotId != null) {
       sib.setPathPreviousSnapshotID(toProtobuf(pathPreviousSnapshotId));
@@ -538,6 +571,18 @@ public final class SnapshotInfo implements Auditable, CopyObject<SnapshotInfo> {
     if (snapshotInfoProto.hasDeepCleanedDeletedDir()) {
       osib.setDeepCleanedDeletedDir(
           snapshotInfoProto.getDeepCleanedDeletedDir());
+    }
+
+    if (snapshotInfoProto.hasTrappedKeyBytes()) {
+      osib.setTrappedKeyBytes(snapshotInfoProto.getTrappedKeyBytes());
+    }
+
+    if (snapshotInfoProto.hasTrappedKeyNamespace()) {
+      osib.setTrappedKeyNamespace(snapshotInfoProto.getTrappedKeyNamespace());
+    }
+
+    if (snapshotInfoProto.hasTrappedDirNamespace()) {
+      osib.setTrappedDirNamespace(snapshotInfoProto.getTrappedDirNamespace());
     }
 
     if (snapshotInfoProto.hasLastTransactionInfo()) {
@@ -682,6 +727,30 @@ public final class SnapshotInfo implements Auditable, CopyObject<SnapshotInfo> {
     this.deepCleanedDeletedDir = deepCleanedDeletedDir;
   }
 
+  public long getTrappedKeyBytes() {
+    return trappedKeyBytes;
+  }
+
+  public void setTrappedKeyBytes(long trappedKeyBytes) {
+    this.trappedKeyBytes = trappedKeyBytes;
+  }
+
+  public long getTrappedKeyNamespace() {
+    return trappedKeyNamespace;
+  }
+
+  public void setTrappedKeyNamespace(long trappedKeyNamespace) {
+    this.trappedKeyNamespace = trappedKeyNamespace;
+  }
+
+  public long getTrappedDirNamespace() {
+    return trappedDirNamespace;
+  }
+
+  public void setTrappedDirNamespace(long trappedDirNamespace) {
+    this.trappedDirNamespace = trappedDirNamespace;
+  }
+
   public ByteString getLastTransactionInfo() {
     return lastTransactionInfo;
   }
@@ -761,7 +830,12 @@ public final class SnapshotInfo implements Auditable, CopyObject<SnapshotInfo> {
         referencedReplicatedSize == that.referencedReplicatedSize &&
         exclusiveSize == that.exclusiveSize &&
         exclusiveReplicatedSize == that.exclusiveReplicatedSize &&
+        exclusiveSizeDeltaFromDirDeepCleaning == that.exclusiveSizeDeltaFromDirDeepCleaning &&
+        exclusiveReplicatedSizeDeltaFromDirDeepCleaning == that.exclusiveReplicatedSizeDeltaFromDirDeepCleaning &&
         deepCleanedDeletedDir == that.deepCleanedDeletedDir &&
+        trappedKeyBytes == that.trappedKeyBytes &&
+        trappedKeyNamespace == that.trappedKeyNamespace &&
+        trappedDirNamespace == that.trappedDirNamespace &&
         Objects.equals(lastTransactionInfo, that.lastTransactionInfo) &&
         Objects.equals(createTransactionInfo, that.createTransactionInfo);
   }
@@ -774,7 +848,10 @@ public final class SnapshotInfo implements Auditable, CopyObject<SnapshotInfo> {
         globalPreviousSnapshotId, snapshotPath,
         deepClean, sstFiltered,
         referencedSize, referencedReplicatedSize,
-        exclusiveSize, exclusiveReplicatedSize, deepCleanedDeletedDir, lastTransactionInfo, createTransactionInfo);
+        exclusiveSize, exclusiveReplicatedSize,
+        exclusiveSizeDeltaFromDirDeepCleaning, exclusiveReplicatedSizeDeltaFromDirDeepCleaning,
+        deepCleanedDeletedDir, trappedKeyBytes, trappedKeyNamespace, trappedDirNamespace,
+        lastTransactionInfo, createTransactionInfo);
   }
 
   /**
@@ -807,6 +884,9 @@ public final class SnapshotInfo implements Auditable, CopyObject<SnapshotInfo> {
         ", exclusiveSizeDeltaFromDirDeepCleaning: '" + exclusiveSizeDeltaFromDirDeepCleaning + '\'' +
         ", exclusiveReplicatedSizeDeltaFromDirDeepCleaning: '" + exclusiveReplicatedSizeDeltaFromDirDeepCleaning +
         "', deepCleanedDeletedDir: '" + deepCleanedDeletedDir + '\'' +
+        ", trappedKeyBytes: '" + trappedKeyBytes + '\'' +
+        ", trappedKeyNamespace: '" + trappedKeyNamespace + '\'' +
+        ", trappedDirNamespace: '" + trappedDirNamespace + '\'' +
         ", lastTransactionInfo: '" + lastTransactionInfo + '\'' +
         ", createTransactionInfo: '" + createTransactionInfo + '\'' +
         '}';

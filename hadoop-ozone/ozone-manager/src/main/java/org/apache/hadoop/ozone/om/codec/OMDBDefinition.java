@@ -44,6 +44,7 @@ import org.apache.hadoop.ozone.om.helpers.OmVolumeArgs;
 import org.apache.hadoop.ozone.om.helpers.RepeatedOmKeyInfo;
 import org.apache.hadoop.ozone.om.helpers.S3SecretValue;
 import org.apache.hadoop.ozone.om.helpers.SnapshotInfo;
+import org.apache.hadoop.ozone.om.helpers.SnapshotTrappedLedgerEntry;
 import org.apache.hadoop.ozone.om.service.SnapshotDeletingService;
 import org.apache.hadoop.ozone.security.OzoneTokenIdentifier;
 import org.apache.hadoop.ozone.storage.proto.OzoneManagerStorageProtos.PersistedUserVolumeInfo;
@@ -133,6 +134,7 @@ import org.apache.ozone.compaction.log.CompactionLogEntry;
  * |----------------------------------------------------------------------------------|
  * |    snapshotInfoTable | /volumeName/bucketName/snapshotName :- SnapshotInfo       |
  * | snapshotRenamedTable | /volumeName/bucketName/objectID     :- renameFrom         |
+ * | snapshotTrappedLedgerTable | /volumeId/bucketId/deleteDbKey :- SnapshotTrappedLedgerEntry |
  * |   compactionLogTable | dbTrxId-compactionTime              :- compactionLogEntry |
  * |----------------------------------------------------------------------------------|
  * }
@@ -324,6 +326,18 @@ public final class OMDBDefinition extends DBDefinition.WithMap {
           StringCodec.get(),
           StringCodec.get()); // path to key in prev snapshot's key(file)/dir Table.
 
+  public static final String SNAPSHOT_TRAPPED_LEDGER_TABLE =
+      "snapshotTrappedLedgerTable";
+  /**
+   * snapshotTrappedLedgerTable: /volumeId/bucketId/deleteDbKey
+   * :- SnapshotTrappedLedgerEntry.
+   */
+  public static final DBColumnFamilyDefinition<String, SnapshotTrappedLedgerEntry>
+      SNAPSHOT_TRAPPED_LEDGER_TABLE_DEF = new DBColumnFamilyDefinition<>(
+          SNAPSHOT_TRAPPED_LEDGER_TABLE,
+          StringCodec.get(),
+          SnapshotTrappedLedgerEntry.getCodec());
+
   public static final String COMPACTION_LOG_TABLE = "compactionLogTable";
   /** compactionLogTable: dbTrxId-compactionTime :- compactionLogEntry. */
   public static final DBColumnFamilyDefinition<String, CompactionLogEntry> COMPACTION_LOG_TABLE_DEF
@@ -365,6 +379,7 @@ public final class OMDBDefinition extends DBDefinition.WithMap {
           S3_SECRET_TABLE_DEF,
           SNAPSHOT_INFO_TABLE_DEF,
           SNAPSHOT_RENAMED_TABLE_DEF,
+          SNAPSHOT_TRAPPED_LEDGER_TABLE_DEF,
           COMPACTION_LOG_TABLE_DEF,
           TENANT_ACCESS_ID_TABLE_DEF,
           TENANT_STATE_TABLE_DEF,
