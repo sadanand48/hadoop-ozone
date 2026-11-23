@@ -27,11 +27,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import java.io.IOException;
 import java.net.URI;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import org.apache.commons.lang3.RandomStringUtils;
 import org.apache.hadoop.fs.FileSystem;
 import org.apache.hadoop.fs.Path;
+import org.apache.hadoop.hdds.utils.db.RDBStore;
 import org.apache.hadoop.hdds.utils.TransactionInfo;
 import org.apache.hadoop.hdfs.protocol.SnapshotDiffReport;
 import org.apache.hadoop.hdfs.protocol.SnapshotDiffReport.DiffReportEntry;
@@ -44,6 +46,7 @@ import org.apache.hadoop.ozone.om.helpers.SnapshotInfo;
 import org.apache.hadoop.ozone.om.service.SnapshotDeletingService;
 import org.apache.hadoop.ozone.snapshot.SnapshotDiffReportOzone;
 import org.apache.hadoop.ozone.snapshot.SnapshotDiffResponse;
+import org.apache.ozone.rocksdiff.RocksDBCheckpointDiffer;
 import org.apache.ozone.test.GenericTestUtils;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfSystemProperty;
@@ -156,6 +159,65 @@ public class TestOptimizedSnapshotDiff extends OmSnapshotTests {
       assertThat(response.getSnapshotDiffReport().getDiffList()).containsExactlyInAnyOrder(
           SnapshotDiffReportOzone.getDiffReportEntry(SnapshotDiffReport.DiffType.DELETE, key1),
           SnapshotDiffReportOzone.getDiffReportEntry(SnapshotDiffReport.DiffType.RENAME, key2, renamedKey));
+    }
+  }
+
+  /**
+   * Reproduces a DAG diff reading a value-pruned compaction backup SST.
+   *
+   * <p>Conceptually, snap1 contains A.sst with the boundary keys, while snap2
+   * contains A.sst plus B.sst with the five new keys.  A later compaction
+   * records A + B -> C in the DAG and backs up A and B.  Pruning rewrites the
+   * backup B with empty values and sequence number zero.  The DAG correctly
+   * selects B as the delta for snap1 -> snap2, but backup-first path resolution
+   * supplies the pruned copy.  The optimized reader must not silently drop its
+   * rows when applying the snap1 sequence-number gate.
+   */
+  @Test
+  public void testDagDiffAfterBackupSstValuePruning() throws Exception {
+    String snap1 = "snap-pruned-1";
+    String snap2 = "snap-pruned-2";
+    RDBStore rdbStore = (RDBStore) getCluster().getOzoneManager()
+        .getMetadataManager().getStore();
+
+    // Flush a wide A.sst before snap1.  Keys on both sides of the later keys
+    // make its range overlap B.sst and prevent a trivial level move.
+    createObsKey(getOzoneBucket(), "pruned-a");
+    createObsKey(getOzoneBucket(), "pruned-z");
+    rdbStore.flushDB();
+    createSnapshot(getVolumeName(), getBucketName(), snap1);
+
+    // Flush the snap1 -> snap2 changes into B.sst.  Since these keys are absent
+    // from snap1, the correct report contains five CREATE entries.
+    List<DiffReportEntry> expected = new ArrayList<>();
+    for (int i = 0; i < 5; i++) {
+      String key = "pruned-m" + i;
+      createObsKey(getOzoneBucket(), key);
+      expected.add(SnapshotDiffReportOzone.getDiffReportEntry(
+          SnapshotDiffReport.DiffType.CREATE, key));
+    }
+    rdbStore.flushDB();
+    createSnapshot(getVolumeName(), getBucketName(), snap2);
+
+    // The overlapping ranges force A + B -> C.  The compaction listener records
+    // this edge, backs up A and B, and queues the backups for value pruning.
+    // Pruning preserves each user key and operation type, but replaces its
+    // value with empty bytes and its original sequence number with zero.
+    rdbStore.compactDB();
+    RocksDBCheckpointDiffer differ = rdbStore.getRocksDBCheckpointDiffer();
+    differ.pruneSstFileValues();
+    assertThat(differ.getPruningMetrics().getFilesPrunedLast()).isPositive();
+
+    // B is present in snap2 but not snap1, so the DAG selects it as the delta.
+    // getSSTFullPath prefers its pruned backup copy over the original in the
+    // snap2 checkpoint.  The current buggy reader rejects every B row because
+    // sequence 0 is not greater than snap1's sequence and returns an empty
+    // report; a correct implementation must return all five CREATE entries.
+    for (boolean ordered : new boolean[] {false, true}) {
+      SnapshotDiffResponse response = waitForDoneReportAfterSubmit(
+          getVolumeName(), getBucketName(), snap1, snap2, false, ordered);
+      assertThat(response.getSnapshotDiffReport().getDiffList())
+          .containsExactlyInAnyOrderElementsOf(expected);
     }
   }
 
